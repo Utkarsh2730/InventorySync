@@ -13,7 +13,9 @@ Two front ends share the same rules, storage and data:
 
 Both use the same localStorage key, so a sale in a React tab shows up in a vanilla tab and the other way round.
 
-**Live demo:** _add your GitHub Pages link here after deploying._
+**Live demo:** <https://utkarsh2730.github.io/InventorySync/>
+· React version: <https://utkarsh2730.github.io/InventorySync/react-app/>
+· Tests: <https://utkarsh2730.github.io/InventorySync/tests.html>
 
 > Sign-in is **simulated**: you pick one of three sample users. All data lives in your own browser.
 

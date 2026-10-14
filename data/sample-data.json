@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "stores": [
+    { "id": "koramangala", "name": "Koramangala", "city": "Bengaluru" },
+    { "id": "indiranagar", "name": "Indiranagar", "city": "Bengaluru" },
+    { "id": "jayanagar", "name": "Jayanagar", "city": "Bengaluru" }
+  ],
+  "products": [
+    { "sku": "TOOR-1KG", "name": "Toor Dal 1 kg", "price": 165 },
+    { "sku": "ATTA-5KG", "name": "Whole Wheat Atta 5 kg", "price": 285 },
+    { "sku": "BASM-5KG", "name": "Basmati Rice 5 kg (बासमती चावल)", "price": 699 },
+    { "sku": "SUNOIL-1L", "name": "Sunflower Oil 1 L", "price": 155 },
+    { "sku": "SUGAR-1KG", "name": "Sugar 1 kg", "price": 48 },
+    { "sku": "SALT-1KG", "name": "Iodised Salt 1 kg", "price": 28 },
+    { "sku": "TEA-500G", "name": "Assam Tea 500 g", "price": 260 },
+    { "sku": "MILK-500ML", "name": "Toned Milk 500 ml", "price": 27 },
+    { "sku": "GHEE-500ML", "name": "Cow Ghee 500 ml", "price": 340 },
+    { "sku": "BISC-MARIE", "name": "Biscuits, Marie \"Family Pack\"", "price": 60 },
+    { "sku": "SOAP-4PK", "name": "Bathing Soap (4-pack)", "price": 180 },
+    { "sku": "DET-1KG", "name": "Detergent Powder 1 kg", "price": 120 },
+    { "sku": "RAGI-1KG", "name": "Ragi Flour 1 kg (ರಾಗಿ ಹಿಟ್ಟು)", "price": 72 },
+    { "sku": "COFFEE-200G", "name": "Filter Coffee 200 g", "price": 210 }
+  ],
+  "stock": {
+    "koramangala": {
+      "TOOR-1KG": { "qty": 3, "reorderLevel": 5 },
+      "ATTA-5KG": { "qty": 40, "reorderLevel": 10 },
+      "BASM-5KG": { "qty": 12, "reorderLevel": 8 },
+      "SUNOIL-1L": { "qty": 6, "reorderLevel": 10 },
+      "SUGAR-1KG": { "qty": 50, "reorderLevel": 15 },
+      "SALT-1KG": { "qty": 30, "reorderLevel": 10 },
+      "TEA-500G": { "qty": 18, "reorderLevel": 6 },
+      "MILK-500ML": { "qty": 60, "reorderLevel": 20 },
+      "GHEE-500ML": { "qty": 0, "reorderLevel": 5 },
+      "BISC-MARIE": { "qty": 45, "reorderLevel": 12 },
+      "SOAP-4PK": { "qty": 20, "reorderLevel": 8 },
+      "DET-1KG": { "qty": 9, "reorderLevel": 10 },
+      "RAGI-1KG": { "qty": 15, "reorderLevel": 6 },
+      "COFFEE-200G": { "qty": 10, "reorderLevel": 5 }
+    },
+    "indiranagar": {
+      "TOOR-1KG": { "qty": 28, "reorderLevel": 5 },
+      "ATTA-5KG": { "qty": 8, "reorderLevel": 10 },
+      "BASM-5KG": { "qty": 20, "reorderLevel": 8 },
+      "SUNOIL-1L": { "qty": 35, "reorderLevel": 10 },
+      "SUGAR-1KG": { "qty": 0, "reorderLevel": 15 },
+      "SALT-1KG": { "qty": 25, "reorderLevel": 10 },
+      "TEA-500G": { "qty": 4, "reorderLevel": 6 },
+      "MILK-500ML": { "qty": 45, "reorderLevel": 20 },
+      "GHEE-500ML": { "qty": 25, "reorderLevel": 5 },
+      "BISC-MARIE": { "qty": 30, "reorderLevel": 12 },
+      "SOAP-4PK": { "qty": 16, "reorderLevel": 8 },
+      "DET-1KG": { "qty": 22, "reorderLevel": 10 },
+      "RAGI-1KG": { "qty": 5, "reorderLevel": 6 },
+      "COFFEE-200G": { "qty": 14, "reorderLevel": 5 }
+    },
+    "jayanagar": {
+      "TOOR-1KG": { "qty": 15, "reorderLevel": 5 },
+      "ATTA-5KG": { "qty": 22, "reorderLevel": 10 },
+      "BASM-5KG": { "qty": 7, "reorderLevel": 8 },
+      "SUNOIL-1L": { "qty": 18, "reorderLevel": 10 },
+      "SUGAR-1KG": { "qty": 40, "reorderLevel": 15 },
+      "SALT-1KG": { "qty": 0, "reorderLevel": 10 },
+      "TEA-500G": { "qty": 12, "reorderLevel": 6 },
+      "MILK-500ML": { "qty": 20, "reorderLevel": 20 },
+      "GHEE-500ML": { "qty": 8, "reorderLevel": 5 },
+      "BISC-MARIE": { "qty": 12, "reorderLevel": 12 },
+      "SOAP-4PK": { "qty": 0, "reorderLevel": 8 },
+      "DET-1KG": { "qty": 15, "reorderLevel": 10 },
+      "RAGI-1KG": { "qty": 20, "reorderLevel": 6 },
+      "COFFEE-200G": { "qty": 6, "reorderLevel": 5 }
+    }
+  },
+  "users": [
+    { "id": "u-asha", "name": "Asha Rao", "role": "manager", "storeId": "koramangala" },
+    { "id": "u-meena", "name": "Meena Iyer", "role": "manager", "storeId": "indiranagar" },
+    { "id": "u-ravi", "name": "Ravi Kumar", "role": "buyer", "storeId": null }
+  ],
+  "log": []
+}

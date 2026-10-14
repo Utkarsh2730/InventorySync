@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InventorySync: multi-store stock and alerts</title>
+  <script>
+    // Dark mode: a saved choice wins, otherwise follow the OS setting.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('inventorysync:theme'); } catch (e) {}
+      var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-bs-theme', saved || (dark ? 'dark' : 'light'));
+    })();
+  </script>
+  <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <a class="visually-hidden-focusable" href="#main">Skip to main content</a>
+
+  <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom no-print" aria-label="Main">
+    <div class="container-fluid">
+      <span class="navbar-brand fw-semibold">InventorySync</span>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu"
+              aria-controls="navMenu" aria-expanded="false" aria-label="Toggle menu">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMenu">
+        <div class="ms-lg-auto d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center py-2 py-lg-0">
+          <div id="userControls" class="d-flex flex-wrap gap-2 align-items-center d-none">
+            <label for="userSwitch" class="small mb-0">Signed in as</label>
+            <select id="userSwitch" class="form-select form-select-sm user-switch"></select>
+            <button id="signOutBtn" type="button" class="btn btn-sm btn-outline-secondary">Sign out</button>
+          </div>
+          <button id="themeToggle" type="button" class="btn btn-sm btn-outline-secondary" aria-pressed="false">Dark mode</button>
+          <button id="resetBtn" type="button" class="btn btn-sm btn-outline-danger">Reset data</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <div id="banner" class="container-fluid pt-3 no-print"></div>
+
+  <main id="main" class="container-fluid py-3">
+
+    <!-- Simulated sign-in (R6). The chosen user is kept in sessionStorage for this tab only. -->
+    <section id="signInScreen" class="d-none" aria-labelledby="signInHeading">
+      <div class="row justify-content-center">
+        <div class="col-12 col-md-8 col-lg-5">
+          <div class="card">
+            <div class="card-body">
+              <h1 id="signInHeading" class="h4">Sign in as a sample user</h1>
+              <p class="text-body-secondary small mb-3">
+                Simulated sign-in for the demo: no passwords. Each browser tab remembers its own user,
+                so you can open two tabs as two different people.
+              </p>
+              <div id="signInList" class="list-group"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="appScreen" class="d-none">
+      <!-- Only shown when printing (Print → Save as PDF). -->
+      <div class="d-none d-print-block mb-3">
+        <h1 class="h4 mb-1">InventorySync stock report</h1>
+        <p id="printMeta" class="small mb-0"></p>
+      </div>
+
+      <h1 class="visually-hidden">InventorySync dashboard</h1>
+
+      <!-- Summary cards: stack to one column at phone width (R8). -->
+      <section class="row g-3 mb-3" aria-label="Summary across all stores">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card h-100"><div class="card-body">
+            <p class="small text-body-secondary mb-1">Total SKUs</p>
+            <p id="cardSkus" class="h3 mb-0">0</p>
+          </div></div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card h-100 border-warning"><div class="card-body">
+            <p class="small text-body-secondary mb-1">Low (store × SKU)</p>
+            <p class="h3 mb-0"><span id="cardLow">0</span> <span class="badge text-bg-warning align-middle fs-6">Low</span></p>
+          </div></div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card h-100 border-danger"><div class="card-body">
+            <p class="small text-body-secondary mb-1">Out (store × SKU)</p>
+            <p class="h3 mb-0"><span id="cardOut">0</span> <span class="badge text-bg-danger align-middle fs-6">Out</span></p>
+          </div></div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card h-100"><div class="card-body">
+            <p class="small text-body-secondary mb-1">Stock value</p>
+            <p id="cardValue" class="h3 mb-0">₹0</p>
+          </div></div>
+        </div>
+      </section>
+
+      <div class="row g-3">
+        <!-- Stock table (R2, R9, R10) -->
+        <div class="col-12 col-lg-8">
+          <section class="card" aria-labelledby="stockHeading">
+            <div class="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
+              <h2 id="stockHeading" class="h5 mb-0">Stock by store</h2>
+              <div class="d-flex flex-wrap gap-2 no-print">
+                <button id="addProductBtn" type="button" class="btn btn-sm btn-outline-primary d-none">Add product</button>
+                <button id="exportBtn" type="button" class="btn btn-sm btn-outline-secondary">Export CSV</button>
+                <button id="printBtn" type="button" class="btn btn-sm btn-outline-secondary">Print / PDF</button>
+                <button id="cartToggle" type="button" class="btn btn-sm btn-primary d-lg-none d-none"
+                        data-bs-toggle="offcanvas" data-bs-target="#cartPanel" aria-controls="cartPanel">
+                  Cart <span id="cartCount" class="badge text-bg-light">0</span>
+                </button>
+              </div>
+            </div>
+            <div class="card-body">
+              <form id="filterForm" class="row g-2 mb-2 no-print" role="search" aria-label="Filter stock">
+                <div class="col-12 col-md-6">
+                  <label for="searchInput" class="form-label small mb-1">Search by name or SKU</label>
+                  <div class="input-group">
+                    <span class="input-group-text" aria-hidden="true">⌕</span>
+                    <input id="searchInput" type="search" class="form-control" placeholder="e.g. ghee or TOOR-1KG" autocomplete="off">
+                    <button id="clearFilters" type="button" class="btn btn-outline-secondary">Clear</button>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label for="storeFilter" class="form-label small mb-1">Store</label>
+                  <select id="storeFilter" class="form-select"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label for="statusFilter" class="form-label small mb-1">Status</label>
+                  <select id="statusFilter" class="form-select">
+                    <option value="all">All statuses</option>
+                    <option value="OK">OK</option>
+                    <option value="Low">Low</option>
+                    <option value="Out">Out</option>
+                  </select>
+                </div>
+              </form>
+              <p id="rowCount" class="small text-body-secondary mb-2" aria-live="polite"></p>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <caption class="visually-hidden">Stock per store and SKU, with the chain total for each SKU</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Store</th>
+                      <th scope="col">SKU</th>
+                      <th scope="col">Product</th>
+                      <th scope="col" class="text-end d-none d-md-table-cell print-cell">Price</th>
+                      <th scope="col" class="text-end">Qty</th>
+                      <th scope="col" class="text-end d-none d-md-table-cell print-cell">Reorder at</th>
+                      <th scope="col">Status</th>
+                      <th scope="col" class="text-end">Chain total</th>
+                      <th scope="col" class="text-end d-none d-md-table-cell print-cell">Value</th>
+                      <th scope="col" class="no-print">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Alerts (R5) and cart -->
+        <div class="col-12 col-lg-4">
+          <section class="card mb-3" aria-labelledby="alertHeading">
+            <div class="card-header d-flex align-items-center justify-content-between">
+              <h2 id="alertHeading" class="h5 mb-0">Alerts</h2>
+              <span id="alertCount" class="badge text-bg-secondary">0</span>
+            </div>
+            <ul id="alertList" class="list-group list-group-flush alert-list" aria-live="polite"></ul>
+          </section>
+
+          <!-- On large screens this is a normal card; below lg it is an offcanvas panel. -->
+          <div id="cartWrap" class="no-print d-none">
+            <div class="offcanvas-lg offcanvas-end" tabindex="-1" id="cartPanel" aria-labelledby="cartHeading">
+              <div class="offcanvas-header">
+                <p class="offcanvas-title h5 mb-0" aria-hidden="true">Cart</p>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#cartPanel" aria-label="Close cart"></button>
+              </div>
+              <div class="offcanvas-body">
+                <section class="card w-100" aria-labelledby="cartHeading">
+                  <div class="card-header">
+                    <h2 id="cartHeading" class="h5 mb-0">Cart</h2>
+                  </div>
+                  <div class="card-body">
+                    <div id="cartErrors" class="alert alert-danger d-none" role="alert"></div>
+                    <p id="cartEmpty" class="text-body-secondary small mb-2">The cart is empty. Use “Add to cart” on a row from your store.</p>
+                    <ul id="cartLines" class="list-unstyled mb-3"></ul>
+                    <p class="d-flex justify-content-between fw-semibold mb-3">
+                      <span>Total</span><span id="cartTotal">₹0</span>
+                    </p>
+                    <div class="d-flex gap-2">
+                      <button id="checkoutBtn" type="button" class="btn btn-success flex-grow-1">Checkout</button>
+                      <button id="clearCartBtn" type="button" class="btn btn-outline-secondary">Clear</button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Receive modal -->
+  <div class="modal fade" id="receiveModal" tabindex="-1" aria-labelledby="receiveTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <form id="receiveForm" class="modal-content" novalidate>
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="receiveTitle">Receive stock</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p id="receiveContext" class="mb-3"></p>
+          <div id="receiveErrors" class="alert alert-danger d-none" role="alert"></div>
+          <label for="receiveQty" class="form-label">Quantity received</label>
+          <input id="receiveQty" type="number" class="form-control" min="1" max="100000" step="1" required inputmode="numeric">
+          <div class="invalid-feedback">Enter a whole number from 1 to 100000.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Receive</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Transfer modal -->
+  <div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transferTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <form id="transferForm" class="modal-content" novalidate>
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="transferTitle">Transfer stock</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p id="transferContext" class="mb-3"></p>
+          <div id="transferErrors" class="alert alert-danger d-none" role="alert"></div>
+          <div class="mb-3">
+            <label for="transferTo" class="form-label">Move to store</label>
+            <select id="transferTo" class="form-select" required></select>
+            <div class="invalid-feedback">Choose the store that receives the stock.</div>
+          </div>
+          <label for="transferQty" class="form-label">Quantity</label>
+          <input id="transferQty" type="number" class="form-control" min="1" step="1" required inputmode="numeric">
+          <div id="transferQtyFeedback" class="invalid-feedback">Enter a whole number, at least 1 and no more than is available.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Transfer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reorder level modal -->
+  <div class="modal fade" id="reorderModal" tabindex="-1" aria-labelledby="reorderTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <form id="reorderForm" class="modal-content" novalidate>
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="reorderTitle">Reorder level</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p id="reorderContext" class="mb-3"></p>
+          <div id="reorderErrors" class="alert alert-danger d-none" role="alert"></div>
+          <label for="reorderLevel" class="form-label">Show as Low at or below</label>
+          <input id="reorderLevel" type="number" class="form-control" min="0" max="100000" step="1" required inputmode="numeric">
+          <div class="invalid-feedback">Enter a whole number from 0 to 100000.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save level</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add product modal (Buyer only) -->
+  <div class="modal fade" id="productModal" tabindex="-1" aria-labelledby="productTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <form id="productForm" class="modal-content" novalidate>
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="productTitle">Add product</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-body-secondary">The product starts at 0 in every store. Receive or transfer stock afterwards.</p>
+          <div id="productErrors" class="alert alert-danger d-none" role="alert"></div>
+          <div class="mb-3">
+            <label for="productSku" class="form-label">SKU</label>
+            <input id="productSku" type="text" class="form-control text-uppercase" required maxlength="24"
+                   pattern="[A-Za-z0-9][A-Za-z0-9\-]{1,23}" autocomplete="off">
+            <div class="invalid-feedback">2–24 letters, digits or dashes, starting with a letter or digit.</div>
+          </div>
+          <div class="mb-3">
+            <label for="productName" class="form-label">Name</label>
+            <input id="productName" type="text" class="form-control" required minlength="2" maxlength="80" autocomplete="off">
+            <div class="invalid-feedback">Enter a name of 2–80 characters.</div>
+          </div>
+          <div class="row g-3">
+            <div class="col-6">
+              <label for="productPrice" class="form-label">Price (₹)</label>
+              <input id="productPrice" type="number" class="form-control" required min="0" max="10000000" step="0.01" inputmode="decimal">
+              <div class="invalid-feedback">Enter a price of 0 or more.</div>
+            </div>
+            <div class="col-6">
+              <label for="productReorder" class="form-label">Reorder level</label>
+              <input id="productReorder" type="number" class="form-control" required min="0" max="100000" step="1" inputmode="numeric">
+              <div class="invalid-feedback">Whole number, 0 or more.</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toastArea" class="toast-container position-fixed bottom-0 end-0 p-3 no-print"></div>
+
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

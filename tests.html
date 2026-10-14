@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InventorySync: critical-path checks</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; line-height: 1.5; }
+    h1 { font-size: 1.25rem; }
+    ol { padding-left: 1.5rem; }
+    .pass { color: #146c43; }
+    .fail { color: #b02a37; font-weight: 600; }
+    #summary { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>InventorySync: critical-path checks</h1>
+  <p>These run against in-memory test data only. Your saved app data is not touched.</p>
+  <p id="summary" role="status">Running…</p>
+  <ol id="results"></ol>
+
+  <script type="module">
+    import { runTests, checkSampleData } from './js/tests.js';
+
+    const results = runTests();
+    results.push(await checkSampleData());
+
+    const list = document.getElementById('results');
+    for (const r of results) {
+      const li = document.createElement('li');
+      li.className = r.passed ? 'pass' : 'fail';
+      li.textContent = `${r.passed ? 'PASS' : 'FAIL'}: ${r.name}${r.error ? ` (${r.error})` : ''}`;
+      list.append(li);
+      console.log(li.textContent);
+    }
+    const failed = results.filter((r) => !r.passed).length;
+    const summary = document.getElementById('summary');
+    summary.textContent = failed === 0
+      ? `All ${results.length} checks passed.`
+      : `${failed} of ${results.length} checks failed.`;
+    summary.className = failed === 0 ? 'pass' : 'fail';
+  </script>
+</body>
+</html>

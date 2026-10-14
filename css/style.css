@@ -1,0 +1,134 @@
+/* InventorySync custom styles. Bootstrap 5.3.8 does most of the work. */
+
+/* --- No sideways scroll at 375 px and 1366 px (R8) ---------------------- */
+/* Flex and grid children may shrink below their content width, and long
+   product names wrap instead of pushing the page wider. The wide table
+   scrolls inside its own .table-responsive box, never the page. */
+.row > *,
+.card,
+.card-body {
+  min-width: 0;
+}
+
+.product-name,
+.alert-list .list-group-item,
+#cartLines li {
+  overflow-wrap: anywhere;
+}
+
+.user-switch {
+  width: auto;
+  max-width: 100%;
+}
+
+/* Toasts are 350 px wide by default; keep them inside a 375 px screen. */
+.toast-container {
+  max-width: 100%;
+}
+
+.toast {
+  max-width: calc(100vw - 2rem);
+}
+
+/* --- Readability ------------------------------------------------------- */
+.table td,
+.table th {
+  white-space: nowrap;
+}
+
+.table td.product-name {
+  white-space: normal;
+  min-width: 10rem;
+}
+
+.qty-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+.actions-cell .btn {
+  margin: 0.125rem 0;
+}
+
+.alert-list {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.cart-qty {
+  width: 5.5rem;
+}
+
+/* --- Visible keyboard focus (accessibility) ----------------------------- */
+:focus-visible {
+  outline: 3px solid var(--bs-primary);
+  outline-offset: 2px;
+}
+
+.btn:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible {
+  outline: 3px solid var(--bs-primary);
+  outline-offset: 2px;
+}
+
+/* --- Print stylesheet: Print → Save as PDF (R10) ------------------------ */
+@media print {
+  .no-print,
+  .navbar,
+  .btn,
+  .modal,
+  .toast-container,
+  .offcanvas-lg {
+    display: none !important;
+  }
+
+  /* Show columns that are hidden on small screens. */
+  .print-cell {
+    display: table-cell !important;
+  }
+
+  /* Table and alerts use the full page width. */
+  .col-lg-8,
+  .col-lg-4 {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .table-responsive {
+    overflow: visible !important;
+  }
+
+  .alert-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .card {
+    border: 0 !important;
+    break-inside: auto;
+  }
+
+  .badge {
+    border: 1px solid #000;
+    color: #000 !important;
+    background: transparent !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Print on white even when dark mode is on. */
+  .card,
+  .table,
+  .list-group-item {
+    --bs-card-bg: #fff;
+    --bs-table-bg: #fff;
+    --bs-table-color: #000;
+    --bs-list-group-bg: #fff;
+    --bs-list-group-color: #000;
+    color: #000 !important;
+  }
+}

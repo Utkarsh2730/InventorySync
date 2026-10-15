@@ -18,6 +18,7 @@ import {
   findProduct,
   findStore,
   isPositiveInt,
+  defaultStoreFor,
 } from './inventory.js';
 import * as store from './store.js';
 import { downloadRowsAsCsv } from './export.js';
@@ -224,8 +225,19 @@ function renderToolbar() {
   $('cartToggle').classList.toggle('d-none', !canSell);
 }
 
+// The Store filter sets the scope for the cards, the alerts and the table.
+function scopeName() {
+  return filters.storeId === 'all' ? 'All stores' : storeNameOf(filters.storeId);
+}
+
+// The all-stores total only makes sense when every store is listed.
+function showChainTotal() {
+  return filters.storeId === 'all';
+}
+
 function renderCards() {
-  const s = summarize(state);
+  const s = summarize(state, filters.storeId);
+  $('summaryScope').textContent = scopeName();
   $('cardSkus').textContent = String(s.totalSkus);
   $('cardLow').textContent = String(s.low);
   $('cardOut').textContent = String(s.out);
@@ -275,34 +287,36 @@ function rowElement(r) {
     h('td', { class: 'text-end qty-cell fw-semibold' }, r.qty),
     h('td', { class: 'text-end qty-cell d-none d-md-table-cell print-cell' }, r.reorderLevel),
     h('td', {}, statusBadge(r.status)),
-    h('td', { class: 'text-end qty-cell' }, r.chainTotal),
+    h('td', { class: `text-end qty-cell chain-total-cell${showChainTotal() ? '' : ' d-none'}` }, r.chainTotal),
     h('td', { class: 'text-end d-none d-md-table-cell print-cell' }, inr.format(r.value)),
     h('td', { class: 'actions-cell no-print' }, actions.length ? actions : h('span', { class: 'text-body-secondary small' }, 'View only')));
 }
 
 function renderTable() {
-  const allRows = buildRows(state);
-  visibleRows = filterRows(allRows, filters);
+  const scopeRows = filterRows(buildRows(state), { storeId: filters.storeId });
+  visibleRows = filterRows(scopeRows, filters);
+  $('chainTotalHead').classList.toggle('d-none', !showChainTotal());
   const body = $('stockBody');
   if (visibleRows.length === 0) {
     body.replaceChildren(h('tr', {}, h('td', { colspan: '10', class: 'text-center text-body-secondary py-4' }, 'No items match these filters.')));
   } else {
     body.replaceChildren(...visibleRows.map(rowElement));
   }
-  $('rowCount').textContent = `Showing ${visibleRows.length} of ${allRows.length} store × SKU rows.`;
+  $('rowCount').textContent = `Showing ${visibleRows.length} of ${scopeRows.length} items · ${scopeName()}`;
 
-  const storeText = filters.storeId === 'all' ? 'All stores' : storeNameOf(filters.storeId);
+  const storeText = scopeName();
   const statusText = filters.status === 'all' ? 'All statuses' : filters.status;
   const searchText = filters.query ? ` · Search: "${filters.query}"` : '';
   $('printMeta').textContent = `Printed ${new Date().toLocaleString('en-IN')} by ${currentUser.name} · Store: ${storeText} · Status: ${statusText}${searchText}`;
 }
 
 function renderAlerts() {
-  const alerts = alertsOf(state);
+  const alerts = alertsOf(state, filters.storeId);
+  $('alertScope').textContent = scopeName();
   $('alertCount').textContent = String(alerts.length);
   const list = $('alertList');
   if (alerts.length === 0) {
-    list.replaceChildren(h('li', { class: 'list-group-item text-body-secondary' }, 'Nothing needs action. All items are above their reorder level.'));
+    list.replaceChildren(h('li', { class: 'list-group-item text-body-secondary' }, `Nothing needs action at ${scopeName()}. All items are above their reorder level.`));
     return;
   }
   list.replaceChildren(...alerts.map((a) => h('li', { class: 'list-group-item d-flex gap-2 align-items-start' },
@@ -554,7 +568,15 @@ function signIn(userId) {
   }
   cart.clear();
   hideErrors('cartErrors');
+  resetFilters();
   render();
+}
+
+// Start each user on their own view: a manager sees their store, the buyer all stores.
+function resetFilters() {
+  filters.query = '';
+  filters.status = 'all';
+  filters.storeId = defaultStoreFor(currentUser);
 }
 
 function restoreUser() {
@@ -565,6 +587,7 @@ function restoreUser() {
     id = null;
   }
   currentUser = state.users.find((u) => u.id === id) || null;
+  resetFilters();
 }
 
 function initTheme() {
@@ -635,9 +658,10 @@ function bindEvents() {
     filters.query = e.target.value;
     renderTable();
   });
+  // The store filter changes the cards and alerts too, so redraw everything.
   $('storeFilter').addEventListener('change', (e) => {
     filters.storeId = e.target.value;
-    renderTable();
+    render();
   });
   $('statusFilter').addEventListener('change', (e) => {
     filters.status = e.target.value;
@@ -647,8 +671,7 @@ function bindEvents() {
     filters.query = '';
     filters.storeId = 'all';
     filters.status = 'all';
-    renderStoreFilter();
-    renderTable();
+    render();
   });
 
   // Export (R10): exactly the rows currently in the table.
@@ -657,7 +680,7 @@ function bindEvents() {
       toast('No rows to export with these filters.', 'danger');
       return;
     }
-    downloadRowsAsCsv(visibleRows);
+    downloadRowsAsCsv(visibleRows, { includeChainTotal: showChainTotal() });
     toast(`Exported ${visibleRows.length} rows to CSV.`);
   });
   $('printBtn').addEventListener('click', () => {
@@ -713,6 +736,7 @@ function bindEvents() {
 // ---------------------------------------------------------------------------
 
 async function start() {
+  window.inventorySyncStarted = true; // read by the safety-net script in index.html
   initTheme();
   if (!bs) {
     showBanner('Bootstrap 5.3.8 files were not found in vendor/bootstrap/. Layout, dialogs and the cart panel need them. See README → Setup.', 'danger');

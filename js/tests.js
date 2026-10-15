@@ -15,6 +15,7 @@ import {
   summarize,
   alertsOf,
   isValidState,
+  defaultStoreFor,
 } from './inventory.js';
 import { escapeCsvCell, rowsToCsv } from './export.js';
 
@@ -190,6 +191,19 @@ export function runTests() {
     const alerts = alertsOf(s);
     return sum.low === 1 && sum.out === 1 && alerts.length === 2 && alerts[0].status === 'Out';
   });
+  check('R5: cards and alerts for one store count only that store', () => {
+    const s = makeState();
+    const a = summarize(s, 'A');
+    const b = summarize(s, 'B');
+    return a.low === 1 && a.out === 1 && a.stockValue === 3 * 165
+      && b.low === 0 && b.out === 0 && b.stockValue === 20 * 165 + 10 * 340
+      && alertsOf(s, 'A').every((r) => r.storeId === 'A') && alertsOf(s, 'B').length === 0
+      && alertsOf(s, 'all').length === 2;
+  });
+  check('A manager starts on their own store; the buyer starts on all stores', () => {
+    const s = makeState();
+    return defaultStoreFor(user(s, 'mB')) === 'B' && defaultStoreFor(user(s, 'buyer')) === 'all' && defaultStoreFor(null) === 'all';
+  });
   check('R9: filter by search text, store and status', () => {
     const rows = buildRows(makeState());
     return filterRows(rows, { query: 'ghee' }).length === 2
@@ -201,6 +215,13 @@ export function runTests() {
   // --- R10: CSV ----------------------------------------------------------
   check('R10: CSV escapes commas, quotes and line breaks', () =>
     escapeCsvCell('a,b') === '"a,b"' && escapeCsvCell('say "hi"') === '"say ""hi"""' && escapeCsvCell('x\ny') === '"x\ny"');
+  check('R10: CSV for one store leaves out the all-stores total, like the screen', () => {
+    const rows = filterRows(buildRows(makeState()), { storeId: 'A' });
+    const one = rowsToCsv(rows, { includeChainTotal: false }).trim().split('\r\n');
+    const all = rowsToCsv(rows).trim().split('\r\n');
+    return !one[0].includes('All stores total') && one[0].split(',').length === 8
+      && all[0].includes('All stores total') && all[0].split(',').length === 9;
+  });
   check('R10: CSV starts with a UTF-8 BOM, has ₹ in the header and one line per row', () => {
     const rows = filterRows(buildRows(makeState()), { storeId: 'A' });
     const csv = rowsToCsv(rows);

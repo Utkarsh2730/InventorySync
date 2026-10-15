@@ -308,9 +308,15 @@ export function filterRows(rows, filters = {}) {
   });
 }
 
-// Numbers for the four summary cards (chain-wide).
-export function summarize(state) {
+// Rows for one store, or for every store when storeId is 'all' or missing.
+function rowsForStore(state, storeId) {
   const rows = buildRows(state);
+  return storeId && storeId !== 'all' ? rows.filter((r) => r.storeId === storeId) : rows;
+}
+
+// Numbers for the four summary cards: one store, or the whole chain.
+export function summarize(state, storeId = 'all') {
+  const rows = rowsForStore(state, storeId);
   return {
     totalSkus: state.products.length,
     low: rows.filter((r) => r.status === 'Low').length,
@@ -319,11 +325,16 @@ export function summarize(state) {
   };
 }
 
-// R5: every store and item needing action, Out first, then Low.
-export function alertsOf(state) {
-  return buildRows(state)
+// R5: every item needing action in one store (or every store), Out first, then Low.
+export function alertsOf(state, storeId = 'all') {
+  return rowsForStore(state, storeId)
     .filter((r) => r.status !== 'OK')
     .sort((a, b) => (a.status === b.status ? 0 : a.status === 'Out' ? -1 : 1));
+}
+
+// The store a user should see first: a manager's own store, otherwise all.
+export function defaultStoreFor(user) {
+  return user && user.role === 'manager' && user.storeId ? user.storeId : 'all';
 }
 
 // Shape check for data loaded from storage. Also rejects negative stock, so

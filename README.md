@@ -156,13 +156,13 @@ Start with **Reset data** so you begin from the sample.
 
 | # | Steps | Expected |
 |---|-------|----------|
-| 1 | Open the app, sign in as **Asha Rao**. | Dashboard shows 14 SKUs, 9 Low, 4 Out. Only Koramangala rows have buttons (Add to cart, Receive). |
+| 1 | Open the app, sign in as **Asha Rao**. | The Store filter starts on **Koramangala**: the table, the summary (14 products, 3 Low, 1 Out) and the alerts show Koramangala only. Rows have Add to cart and Receive. Pick **All stores** to see every branch (9 Low, 4 Out). |
 | 2 | **R1.** Koramangala, *Toor Dal 1 kg* has 3. Add it to the cart twice, then **Checkout**. | “Sale recorded”. Qty is now 1, status Low. |
 | 3 | Add Toor Dal once, change the cart quantity to **2**, **Checkout**. | Refused: “only 1 in stock … cannot sell 2”. Qty stays 1. |
 | 4 | Put a valid line and an oversized line in the cart, **Checkout**. | Whole sale refused; neither quantity changes. |
-| 5 | **R2.** Look at the *Chain total* column for any SKU. | Equals the sum of that SKU across the three stores. |
+| 5 | **R2.** Set Store to **All stores** and look at the *All stores total* column. | Equals the sum of that SKU across the three stores. The column is hidden when one store is selected. |
 | 6 | **R4.** Open a second tab at the same URL, sign in as **Ravi Kumar**. Sell an item in tab 1. | Tab 2 updates qty, cards and alerts within 1 second, with no reload. |
-| 7 | **R3.** As Ravi, *Cow Ghee* row for Indiranagar → **Transfer** 10 to Koramangala. | Indiranagar 25 → 15, Koramangala 0 → 10, chain total unchanged; the Koramangala Out alert clears. |
+| 7 | **R3.** As Ravi, *Cow Ghee* row for Indiranagar → **Transfer** 10 to Koramangala. | Indiranagar 25 → 15, Koramangala 0 → 10, all-stores total unchanged; the Koramangala Out alert clears. |
 | 8 | **R5/R6.** As Ravi, **Reorder level** on any row, set it above the quantity. | Status turns Low and the alert appears at once. Asha never sees Transfer or Reorder buttons; the rule tests in `tests.html` confirm `transfer`/`setReorder` are refused for managers even if called directly. |
 | 9 | **R6.** As Ravi, try to sell. | No cart is shown; `checkout` refuses a Buyer (see `tests.html`). |
 | 10 | As Ravi, **Receive** 10 at any store, and **Add product** (e.g. `SALT-500G`). | Stock goes up; the new product appears at 0 (Out) in every store. |

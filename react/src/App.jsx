@@ -17,6 +17,7 @@ import {
   alertsOf,
   findProduct,
   isPositiveInt,
+  defaultStoreFor,
 } from '../../js/inventory.js';
 import { downloadRowsAsCsv } from '../../js/export.js';
 import { useInventory } from './useInventory.js';
@@ -96,10 +97,24 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), type === 'danger' ? 6000 : 3500);
   }, []);
 
-  const allRows = useMemo(() => (state ? buildRows(state) : []), [state]);
-  const visibleRows = useMemo(() => filterRows(allRows, filters), [allRows, filters]);
-  const summary = useMemo(() => (state ? summarize(state) : null), [state]);
-  const alerts = useMemo(() => (state ? alertsOf(state) : []), [state]);
+  // Start each user on their own view: a manager sees their store, the buyer all stores.
+  const userKey = user ? user.id : null;
+  useEffect(() => {
+    setFilters({ query: '', storeId: defaultStoreFor(user), status: 'all' });
+    // Only when the signed-in user changes, not on every stock update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userKey]);
+
+  // The Store filter sets the scope for the cards, the alerts and the table.
+  const scopeStore = filters.storeId;
+  const scopeRows = useMemo(
+    () => (state ? filterRows(buildRows(state), { storeId: scopeStore }) : []),
+    [state, scopeStore],
+  );
+  const visibleRows = useMemo(() => filterRows(scopeRows, filters), [scopeRows, filters]);
+  const summary = useMemo(() => (state ? summarize(state, scopeStore) : null), [state, scopeStore]);
+  const alerts = useMemo(() => (state ? alertsOf(state, scopeStore) : []), [state, scopeStore]);
+  const showChainTotal = scopeStore === 'all';
 
   // Drop cart lines for products that no longer exist (e.g. after a reset elsewhere).
   useEffect(() => {
@@ -203,12 +218,14 @@ export default function App() {
       toast('No rows to export with these filters.', 'danger');
       return;
     }
-    downloadRowsAsCsv(visibleRows);
+    downloadRowsAsCsv(visibleRows, { includeChainTotal: showChainTotal });
     toast(`Exported ${visibleRows.length} rows to CSV.`);
   };
 
+  const scopeName = scopeStore === 'all' ? 'All stores' : storeName(scopeStore);
+
   const printMeta = user
-    ? `Printed ${new Date().toLocaleString('en-IN')} by ${user.name} · Store: ${filters.storeId === 'all' ? 'All stores' : storeName(filters.storeId)} · Status: ${filters.status === 'all' ? 'All statuses' : filters.status}${filters.query ? ` · Search: "${filters.query}"` : ''}`
+    ? `Printed ${new Date().toLocaleString('en-IN')} by ${user.name} · Store: ${scopeName} · Status: ${filters.status === 'all' ? 'All statuses' : filters.status}${filters.query ? ` · Search: "${filters.query}"` : ''}`
     : '';
 
   return (
@@ -268,7 +285,7 @@ export default function App() {
             </div>
             <h1 className="visually-hidden">InventorySync dashboard</h1>
 
-            <SummaryCards summary={summary} />
+            <SummaryCards summary={summary} scopeName={scopeName} />
 
             <div className="row g-3">
               <div className="col-12 col-lg-8">
@@ -294,15 +311,15 @@ export default function App() {
                   <div className="card-body">
                     <Filters stores={state.stores} filters={filters} onChange={setFilters} />
                     <p className="small text-body-secondary mb-2" aria-live="polite">
-                      Showing {visibleRows.length} of {allRows.length} store × SKU rows.
+                      Showing {visibleRows.length} of {scopeRows.length} items · {scopeName}
                     </p>
-                    <StockTable rows={visibleRows} user={user} onAction={onAction} />
+                    <StockTable rows={visibleRows} user={user} onAction={onAction} showChainTotal={showChainTotal} />
                   </div>
                 </section>
               </div>
 
               <div className="col-12 col-lg-4">
-                <AlertPanel alerts={alerts} />
+                <AlertPanel alerts={alerts} scopeName={scopeName} />
                 {canSell && (
                   <Cart
                     state={state}

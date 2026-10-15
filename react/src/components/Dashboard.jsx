@@ -33,24 +33,26 @@ export function SignIn({ users, storeName, onSignIn }) {
   );
 }
 
-export function SummaryCards({ summary }) {
+export function SummaryCards({ summary, scopeName }) {
   return (
-    <section className="row g-3 mb-3" aria-label="Summary across all stores">
+    <>
+    <h2 className="h6 text-body-secondary mb-2">Summary · <span id="summaryScope">{scopeName}</span></h2>
+    <section className="row g-3 mb-3" aria-labelledby="summaryScope">
       <div className="col-12 col-sm-6 col-xl-3">
         <div className="card h-100"><div className="card-body">
-          <p className="small text-body-secondary mb-1">Total SKUs</p>
+          <p className="small text-body-secondary mb-1">Products</p>
           <p className="h3 mb-0">{summary.totalSkus}</p>
         </div></div>
       </div>
       <div className="col-12 col-sm-6 col-xl-3">
         <div className="card h-100 border-warning"><div className="card-body">
-          <p className="small text-body-secondary mb-1">Low (store × SKU)</p>
+          <p className="small text-body-secondary mb-1">Low stock items</p>
           <p className="h3 mb-0">{summary.low} <span className="badge text-bg-warning align-middle fs-6">Low</span></p>
         </div></div>
       </div>
       <div className="col-12 col-sm-6 col-xl-3">
         <div className="card h-100 border-danger"><div className="card-body">
-          <p className="small text-body-secondary mb-1">Out (store × SKU)</p>
+          <p className="small text-body-secondary mb-1">Out of stock items</p>
           <p className="h3 mb-0">{summary.out} <span className="badge text-bg-danger align-middle fs-6">Out</span></p>
         </div></div>
       </div>
@@ -61,6 +63,7 @@ export function SummaryCards({ summary }) {
         </div></div>
       </div>
     </section>
+    </>
   );
 }
 
@@ -115,11 +118,11 @@ function RowActions({ user, row, onAction }) {
   return buttons.length ? buttons : <span className="text-body-secondary small">View only</span>;
 }
 
-export function StockTable({ rows, user, onAction }) {
+export function StockTable({ rows, user, onAction, showChainTotal }) {
   return (
     <div className="table-responsive">
       <table className="table table-sm table-hover align-middle mb-0">
-        <caption className="visually-hidden">Stock per store and SKU, with the chain total for each SKU</caption>
+        <caption className="visually-hidden">Stock per store and SKU</caption>
         <thead>
           <tr>
             <th scope="col">Store</th>
@@ -129,7 +132,7 @@ export function StockTable({ rows, user, onAction }) {
             <th scope="col" className="text-end">Qty</th>
             <th scope="col" className="text-end d-none d-md-table-cell print-cell">Reorder at</th>
             <th scope="col">Status</th>
-            <th scope="col" className="text-end">Chain total</th>
+            {showChainTotal && <th scope="col" className="text-end">All stores total</th>}
             <th scope="col" className="text-end d-none d-md-table-cell print-cell">Value</th>
             <th scope="col" className="no-print">Actions</th>
           </tr>
@@ -147,7 +150,7 @@ export function StockTable({ rows, user, onAction }) {
               <td className="text-end qty-cell fw-semibold">{r.qty}</td>
               <td className="text-end qty-cell d-none d-md-table-cell print-cell">{r.reorderLevel}</td>
               <td><StatusBadge status={r.status} /></td>
-              <td className="text-end qty-cell">{r.chainTotal}</td>
+              {showChainTotal && <td className="text-end qty-cell">{r.chainTotal}</td>}
               <td className="text-end d-none d-md-table-cell print-cell">{inr.format(r.value)}</td>
               <td className="actions-cell no-print"><RowActions user={user} row={r} onAction={onAction} /></td>
             </tr>
@@ -158,16 +161,16 @@ export function StockTable({ rows, user, onAction }) {
   );
 }
 
-export function AlertPanel({ alerts }) {
+export function AlertPanel({ alerts, scopeName }) {
   return (
     <section className="card mb-3" aria-labelledby="alertHeading">
       <div className="card-header d-flex align-items-center justify-content-between">
-        <h2 id="alertHeading" className="h5 mb-0">Alerts</h2>
+        <h2 id="alertHeading" className="h5 mb-0">Alerts · {scopeName}</h2>
         <span className="badge text-bg-secondary">{alerts.length}</span>
       </div>
       <ul className="list-group list-group-flush alert-list" aria-live="polite">
         {alerts.length === 0 && (
-          <li className="list-group-item text-body-secondary">Nothing needs action. All items are above their reorder level.</li>
+          <li className="list-group-item text-body-secondary">Nothing needs action at {scopeName}. All items are above their reorder level.</li>
         )}
         {alerts.map((a) => (
           <li key={`${a.storeId}|${a.sku}`} className="list-group-item d-flex gap-2 align-items-start">

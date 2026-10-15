@@ -72,23 +72,24 @@
 
       <h1 class="visually-hidden">InventorySync dashboard</h1>
 
-      <!-- Summary cards: stack to one column at phone width (R8). -->
-      <section class="row g-3 mb-3" aria-label="Summary across all stores">
+      <!-- Summary cards: stack to one column at phone width (R8). They follow the Store filter. -->
+      <h2 class="h6 text-body-secondary mb-2">Summary · <span id="summaryScope">All stores</span></h2>
+      <section class="row g-3 mb-3" aria-labelledby="summaryScope">
         <div class="col-12 col-sm-6 col-xl-3">
           <div class="card h-100"><div class="card-body">
-            <p class="small text-body-secondary mb-1">Total SKUs</p>
+            <p class="small text-body-secondary mb-1">Products</p>
             <p id="cardSkus" class="h3 mb-0">0</p>
           </div></div>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
           <div class="card h-100 border-warning"><div class="card-body">
-            <p class="small text-body-secondary mb-1">Low (store × SKU)</p>
+            <p class="small text-body-secondary mb-1">Low stock items</p>
             <p class="h3 mb-0"><span id="cardLow">0</span> <span class="badge text-bg-warning align-middle fs-6">Low</span></p>
           </div></div>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
           <div class="card h-100 border-danger"><div class="card-body">
-            <p class="small text-body-secondary mb-1">Out (store × SKU)</p>
+            <p class="small text-body-secondary mb-1">Out of stock items</p>
             <p class="h3 mb-0"><span id="cardOut">0</span> <span class="badge text-bg-danger align-middle fs-6">Out</span></p>
           </div></div>
         </div>
@@ -143,7 +144,7 @@
               <p id="rowCount" class="small text-body-secondary mb-2" aria-live="polite"></p>
               <div class="table-responsive">
                 <table class="table table-sm table-hover align-middle mb-0">
-                  <caption class="visually-hidden">Stock per store and SKU, with the chain total for each SKU</caption>
+                  <caption class="visually-hidden">Stock per store and SKU</caption>
                   <thead>
                     <tr>
                       <th scope="col">Store</th>
@@ -153,7 +154,7 @@
                       <th scope="col" class="text-end">Qty</th>
                       <th scope="col" class="text-end d-none d-md-table-cell print-cell">Reorder at</th>
                       <th scope="col">Status</th>
-                      <th scope="col" class="text-end">Chain total</th>
+                      <th scope="col" class="text-end chain-total-cell" id="chainTotalHead">All stores total</th>
                       <th scope="col" class="text-end d-none d-md-table-cell print-cell">Value</th>
                       <th scope="col" class="no-print">Actions</th>
                     </tr>
@@ -169,7 +170,7 @@
         <div class="col-12 col-lg-4">
           <section class="card mb-3" aria-labelledby="alertHeading">
             <div class="card-header d-flex align-items-center justify-content-between">
-              <h2 id="alertHeading" class="h5 mb-0">Alerts</h2>
+              <h2 id="alertHeading" class="h5 mb-0">Alerts · <span id="alertScope">All stores</span></h2>
               <span id="alertCount" class="badge text-bg-secondary">0</span>
             </div>
             <ul id="alertList" class="list-group list-group-flush alert-list" aria-live="polite"></ul>
@@ -329,5 +330,18 @@
 
   <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
   <script type="module" src="js/app.js"></script>
+  <script>
+    // Safety net: if app.js failed to start (for example the browser mixed old
+    // and new cached files after a deploy), say so instead of showing a blank page.
+    setTimeout(function () {
+      if (window.inventorySyncStarted) return;
+      var box = document.getElementById('banner');
+      var msg = document.createElement('div');
+      msg.className = 'alert alert-danger';
+      msg.setAttribute('role', 'alert');
+      msg.textContent = 'InventorySync did not start. Reload the page with Ctrl+Shift+R (Cmd+Shift+R on a Mac). If it still fails, open the browser console (F12) for details.';
+      box.appendChild(msg);
+    }, 4000);
+  </script>
 </body>
 </html>

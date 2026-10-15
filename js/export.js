@@ -13,7 +13,7 @@ export const CSV_HEADERS = [
   'Reorder level',
   'Status',
   'Stock value (₹)',
-  'Chain total',
+  'All stores total',
 ];
 
 // Quote a cell when it contains a comma, quote or line break, doubling any
@@ -33,19 +33,16 @@ export function toCsv(headers, records) {
 }
 
 // Turn table rows (from inventory.buildRows/filterRows) into CSV text.
-export function rowsToCsv(rows) {
-  const records = rows.map((r) => [
-    r.storeName,
-    r.sku,
-    r.name,
-    r.price,
-    r.qty,
-    r.reorderLevel,
-    r.status,
-    r.value,
-    r.chainTotal,
-  ]);
-  return toCsv(CSV_HEADERS, records);
+// includeChainTotal follows the screen: the all-stores total column is only
+// shown (and exported) when the table is not limited to one store.
+export function rowsToCsv(rows, { includeChainTotal = true } = {}) {
+  const headers = includeChainTotal ? CSV_HEADERS : CSV_HEADERS.slice(0, -1);
+  const records = rows.map((r) => {
+    const cells = [r.storeName, r.sku, r.name, r.price, r.qty, r.reorderLevel, r.status, r.value];
+    if (includeChainTotal) cells.push(r.chainTotal);
+    return cells;
+  });
+  return toCsv(headers, records);
 }
 
 function todayStamp(date = new Date()) {
@@ -54,8 +51,8 @@ function todayStamp(date = new Date()) {
 }
 
 // Download the given rows as inventorysync-YYYY-MM-DD.csv.
-export function downloadRowsAsCsv(rows) {
-  const csv = rowsToCsv(rows);
+export function downloadRowsAsCsv(rows, options) {
+  const csv = rowsToCsv(rows, options);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

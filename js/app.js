@@ -337,27 +337,35 @@ function renderCart() {
   // Drop lines for products that no longer exist (e.g. after a reset).
   for (const sku of [...cart.keys()]) if (!findProduct(state, sku)) cart.delete(sku);
 
+  // Each item: name and line total on top; quantity, stock and Remove below.
   const lines = [...cart].map(([sku, qty]) => {
     const p = findProduct(state, sku);
     const inStock = state.stock[storeId][sku].qty;
     const inputId = `cartQty-${sku}`;
-    return h('li', { class: 'border-bottom pb-2 mb-2' },
-      h('div', { class: 'd-flex justify-content-between gap-2' },
-        h('label', { for: inputId, class: 'fw-semibold' }, p.name),
-        h('button', { type: 'button', class: 'btn btn-sm btn-link text-danger p-0', 'data-remove': sku, 'aria-label': `Remove ${p.name} from cart` }, 'Remove')),
-      h('div', { class: 'd-flex align-items-center gap-2 mt-1' },
+    return h('li', { class: 'cart-line' },
+      h('div', { class: 'cart-line-top' },
+        h('label', { for: inputId, class: 'cart-line-name' }, p.name),
+        h('span', { class: 'cart-line-total', 'data-line-total': sku }, lineTotalText(p, qty))),
+      h('div', { class: 'cart-line-bottom' },
         h('input', {
           id: inputId,
           type: 'number',
           class: `form-control form-control-sm cart-qty${isPositiveInt(qty) ? '' : ' is-invalid'}`,
           min: '1',
+          max: String(inStock),
           step: '1',
           value: Number.isFinite(qty) ? String(qty) : '',
           'data-sku': sku,
           inputmode: 'numeric',
           'aria-describedby': `${inputId}-help`,
         }),
-        h('span', { id: `${inputId}-help`, class: 'small text-body-secondary' }, `${inStock} in stock · ${inr.format(p.price)} each`)));
+        h('span', { id: `${inputId}-help`, class: 'cart-line-help' }, `of ${inStock} · ${inr.format(p.price)} each`),
+        h('button', {
+          type: 'button',
+          class: 'btn btn-sm btn-outline-danger cart-line-remove',
+          'data-remove': sku,
+          'aria-label': `Remove ${p.name} from cart`,
+        }, 'Remove')));
   });
 
   $('cartLines').replaceChildren(...lines);
@@ -365,6 +373,11 @@ function renderCart() {
   $('checkoutBtn').disabled = cart.size === 0;
   $('clearCartBtn').disabled = cart.size === 0;
   updateCartTotals();
+}
+
+// Price × quantity for one cart item, or a dash while the quantity is invalid.
+function lineTotalText(product, qty) {
+  return isPositiveInt(qty) ? inr.format(product.price * qty) : '–';
 }
 
 function updateCartTotals() {
@@ -376,6 +389,8 @@ function updateCartTotals() {
       total += p.price * qty;
       count += qty;
     }
+    const cell = document.querySelector(`[data-line-total="${CSS.escape(sku)}"]`);
+    if (cell && p) cell.textContent = lineTotalText(p, qty);
   }
   $('cartTotal').textContent = inr.format(total);
   $('cartCount').textContent = String(count);

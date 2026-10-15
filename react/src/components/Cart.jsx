@@ -60,32 +60,35 @@ export function Cart({ state, storeId, storeName, cart, errors, open, onClose, o
               {lines.length === 0 && (
                 <p className="text-body-secondary small mb-2">The cart is empty. Use “Add to cart” on a row from your store.</p>
               )}
-              <ul className="list-unstyled mb-3" id="cartLines">
+              {/* Each item: name and line total on top; quantity, stock and Remove below. */}
+              <ul className="list-unstyled mb-0" id="cartLines">
                 {lines.map(([sku, qty]) => {
                   const p = findProduct(state, sku);
+                  const inStock = state.stock[storeId][sku].qty;
                   const inputId = `cartQty-${sku}`;
                   return (
-                    <li key={sku} className="border-bottom pb-2 mb-2">
-                      <div className="d-flex justify-content-between gap-2">
-                        <label htmlFor={inputId} className="fw-semibold">{p.name}</label>
-                        <button type="button" className="btn btn-sm btn-link text-danger p-0"
-                          aria-label={`Remove ${p.name} from cart`} onClick={() => onRemove(sku)}>Remove</button>
+                    <li key={sku} className="cart-line">
+                      <div className="cart-line-top">
+                        <label htmlFor={inputId} className="cart-line-name">{p.name}</label>
+                        <span className="cart-line-total">{isPositiveInt(qty) ? inr.format(p.price * qty) : '–'}</span>
                       </div>
-                      <div className="d-flex align-items-center gap-2 mt-1">
-                        <input id={inputId} type="number" min="1" step="1" inputMode="numeric"
+                      <div className="cart-line-bottom">
+                        <input id={inputId} type="number" min="1" max={inStock} step="1" inputMode="numeric"
                           className={`form-control form-control-sm cart-qty${isPositiveInt(qty) ? '' : ' is-invalid'}`}
                           value={Number.isFinite(qty) ? qty : ''} aria-describedby={`${inputId}-help`}
                           onChange={(e) => onQtyChange(sku, e.target.value === '' ? NaN : Number(e.target.value))} />
-                        <span id={`${inputId}-help`} className="small text-body-secondary">
-                          {state.stock[storeId][sku].qty} in stock · {inr.format(p.price)} each
+                        <span id={`${inputId}-help`} className="cart-line-help">
+                          of {inStock} · {inr.format(p.price)} each
                         </span>
+                        <button type="button" className="btn btn-sm btn-outline-danger cart-line-remove"
+                          aria-label={`Remove ${p.name} from cart`} onClick={() => onRemove(sku)}>Remove</button>
                       </div>
                     </li>
                   );
                 })}
               </ul>
-              <p className="d-flex justify-content-between fw-semibold mb-3">
-                <span>Total</span><span>{inr.format(total)}</span>
+              <p className="cart-total">
+                <span>Total</span><span className="cart-line-total">{inr.format(total)}</span>
               </p>
               <div className="d-flex gap-2">
                 <button type="button" className="btn btn-success flex-grow-1" disabled={lines.length === 0} onClick={onCheckout}>Checkout</button>

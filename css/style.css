@@ -11,8 +11,7 @@
 }
 
 .product-name,
-.alert-list .list-group-item,
-#cartLines li {
+.alert-list .list-group-item {
   overflow-wrap: anywhere;
 }
 
@@ -144,18 +143,16 @@
   .side-panel .cart-wrap .card-body {
     display: flex;
     flex-direction: column;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
   }
 
+  /* The cart keeps its height and the alert list shrinks instead. The item
+     list grows with the screen: about 2½ items at 768 px tall, more on
+     taller screens; a part-visible last item shows there is more to scroll. */
   .side-panel #cartLines {
-    flex: 0 1 auto;
-    min-height: 0;
+    max-height: clamp(5rem, calc(100vh - 36rem), 30rem);
     overflow-y: auto;
-  }
-
-  .side-panel #cartLines:not(:empty) {
-    min-height: 5rem; /* always room for one whole item */
   }
 }
 
@@ -176,8 +173,76 @@
   }
 }
 
+/* --- Cart items ---------------------------------------------------------- */
+/* Line 1: product name (wraps between words) and the line total.
+   Line 2: quantity box, "of N · ₹ each" and a Remove button, on one row. */
+.cart-line {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.cart-line:first-child {
+  padding-top: 0;
+}
+
+.cart-line:last-child {
+  border-bottom: 0;
+}
+
+.cart-line-top,
+.cart-line-bottom {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cart-line-top {
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.cart-line-name {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.cart-line-total {
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-line-bottom {
+  margin-top: 0.375rem;
+}
+
 .cart-qty {
-  width: 5.5rem;
+  width: 4.5rem;
+  flex: 0 0 auto;
+}
+
+.cart-line-help {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.875em;
+  color: var(--bs-secondary-color);
+}
+
+.cart-line-remove {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Total row lines up with the line totals above it. */
+.cart-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 600;
+  padding-top: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-top: 1px solid var(--bs-border-color);
 }
 
 /* --- Visible keyboard focus (accessibility) ----------------------------- */

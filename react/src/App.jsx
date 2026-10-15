@@ -236,8 +236,8 @@ export default function App() {
                   <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => signIn(null)}>Sign out</button>
                 </div>
               )}
-              <button type="button" className="btn btn-sm btn-outline-secondary" aria-pressed={theme === 'dark'} onClick={toggleTheme}>
-                Dark mode
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={toggleTheme}>
+                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
               </button>
               <button type="button" className="btn btn-sm btn-outline-danger" onClick={onReset}>Reset data</button>
             </div>
@@ -251,7 +251,7 @@ export default function App() {
             <div key={i} className="alert alert-warning alert-dismissible" role="alert">
               {b}
               <button type="button" className="btn-close" aria-label="Close"
-                onClick={() => setBanners(banners.filter((_, j) => j !== i))} />
+                onClick={() => setBanners((list) => list.filter((_, j) => j !== i))} />
             </div>
           ))}
         </div>
@@ -359,7 +359,7 @@ export default function App() {
             <div className="d-flex">
               <div className="toast-body">{t.message}</div>
               <button type="button" className="btn-close btn-close-white me-2 m-auto" aria-label="Close"
-                onClick={() => setToasts(toasts.filter((x) => x.id !== t.id))} />
+                onClick={() => setToasts((list) => list.filter((x) => x.id !== t.id))} />
             </div>
           </div>
         ))}

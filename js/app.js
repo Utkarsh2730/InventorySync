@@ -34,8 +34,37 @@ const cart = new Map(); // sku -> qty, always for the signed-in manager's own st
 const filters = { query: '', storeId: 'all', status: 'all' };
 let visibleRows = []; // rows currently shown in the table (also what CSV exports)
 let modalContext = {}; // { storeId, sku } for the modal that is open
+let modalReturnFocus = null; // where keyboard focus goes when the modal closes
 
 const $ = (id) => document.getElementById(id);
+
+// Redraws replace the table rows, so the focused button is a new element
+// afterwards. A "focus key" describes the focused control (by id, or by its
+// row action) so the same control can be focused again after the redraw.
+function focusKeyOf(el) {
+  if (!el || el === document.body) return null;
+  if (el.id) return { id: el.id };
+  if (el.dataset && el.dataset.action) {
+    return { action: el.dataset.action, store: el.dataset.store, sku: el.dataset.sku };
+  }
+  return null;
+}
+
+function restoreFocus(key) {
+  if (!key) return false;
+  let el = null;
+  if (key.id) {
+    el = $(key.id);
+  } else {
+    const row = `[data-store="${CSS.escape(key.store)}"][data-sku="${CSS.escape(key.sku)}"]`;
+    el = document.querySelector(`#stockBody button[data-action="${CSS.escape(key.action)}"]${row}`);
+    // The same button may now be disabled (e.g. stock hit 0): use another one in that row.
+    if (!el || el.disabled) el = document.querySelector(`#stockBody button${row}:not([disabled])`);
+  }
+  if (!el || el.disabled || el.offsetParent === null) return false;
+  if (el !== document.activeElement) el.focus();
+  return true;
+}
 
 // Build an element safely. Text always goes in via textContent, never as HTML,
 // so product names typed by users cannot inject markup.
@@ -149,7 +178,7 @@ function runWrite(apply, { errorBox, success }) {
 // ---------------------------------------------------------------------------
 
 function render() {
-  const focusedId = document.activeElement && document.activeElement.id;
+  const focusKey = focusKeyOf(document.activeElement);
   const signedIn = Boolean(currentUser);
   $('signInScreen').classList.toggle('d-none', signedIn);
   $('appScreen').classList.toggle('d-none', !signedIn);
@@ -167,11 +196,8 @@ function render() {
     renderCart();
   }
 
-  // Keep keyboard focus on the same field after a redraw (e.g. a sync).
-  if (focusedId) {
-    const el = $(focusedId);
-    if (el && el !== document.activeElement) el.focus();
-  }
+  // Keep keyboard focus on the same control after a redraw (a click, a save or a sync).
+  restoreFocus(focusKey);
 }
 
 function renderSignIn() {
@@ -382,7 +408,10 @@ function onCheckout() {
 // Modals: Receive, Transfer, Reorder level, Add product
 // ---------------------------------------------------------------------------
 
-function openModal(modalId, formId, errorBoxId) {
+// returnFocus is the focus key of the control that opened the modal. The
+// table is redrawn while the modal is open, so the original button element
+// may be gone by the time it closes.
+function openModal(modalId, formId, errorBoxId, returnFocus) {
   if (!bs) {
     toast('Bootstrap JavaScript is missing from vendor/, so dialogs cannot open. See README.', 'danger');
     return;
@@ -391,7 +420,28 @@ function openModal(modalId, formId, errorBoxId) {
   form.reset();
   form.classList.remove('was-validated');
   hideErrors(errorBoxId);
+  modalReturnFocus = returnFocus;
   bs.Modal.getOrCreateInstance($(modalId)).show();
+}
+
+// Focus the first field when a modal opens, and hand focus back to the
+// opening button as soon as it starts closing (before Bootstrap hides the
+// modal from screen readers, so focus is never left inside a hidden element).
+function bindModalFocus(modalId) {
+  const modal = $(modalId);
+  modal.addEventListener('shown.bs.modal', () => {
+    const field = modal.querySelector('.modal-body input, .modal-body select');
+    if (field) field.focus();
+  });
+  modal.addEventListener('hide.bs.modal', () => {
+    // Wait one tick: Bootstrap releases its focus trap right after this event.
+    setTimeout(() => {
+      if (!restoreFocus(modalReturnFocus) && modal.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
+      modalReturnFocus = null;
+    }, 0);
+  });
 }
 
 function closeModal(modalId) {
@@ -406,13 +456,13 @@ function describe(storeId, sku) {
 
 function openReceive(storeId, sku) {
   modalContext = { storeId, sku };
-  openModal('receiveModal', 'receiveForm', 'receiveErrors');
+  openModal('receiveModal', 'receiveForm', 'receiveErrors', { action: 'receive', store: storeId, sku });
   $('receiveContext').textContent = describe(storeId, sku);
 }
 
 function openTransfer(storeId, sku) {
   modalContext = { storeId, sku };
-  openModal('transferModal', 'transferForm', 'transferErrors');
+  openModal('transferModal', 'transferForm', 'transferErrors', { action: 'transfer', store: storeId, sku });
   const available = state.stock[storeId][sku].qty;
   $('transferContext').textContent = `From ${describe(storeId, sku)}`;
   $('transferTo').replaceChildren(
@@ -425,7 +475,7 @@ function openTransfer(storeId, sku) {
 
 function openReorder(storeId, sku) {
   modalContext = { storeId, sku };
-  openModal('reorderModal', 'reorderForm', 'reorderErrors');
+  openModal('reorderModal', 'reorderForm', 'reorderErrors', { action: 'reorder', store: storeId, sku });
   $('reorderContext').textContent = describe(storeId, sku);
   $('reorderLevel').value = String(state.stock[storeId][sku].reorderLevel);
 }
@@ -520,7 +570,10 @@ function restoreUser() {
 function initTheme() {
   const btn = $('themeToggle');
   const root = document.documentElement;
-  const update = () => btn.setAttribute('aria-pressed', String(root.getAttribute('data-bs-theme') === 'dark'));
+  // The label names the mode the button switches to.
+  const update = () => {
+    btn.textContent = root.getAttribute('data-bs-theme') === 'dark' ? 'Light mode' : 'Dark mode';
+  };
   btn.addEventListener('click', () => {
     const next = root.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
     root.setAttribute('data-bs-theme', next);
@@ -623,7 +676,7 @@ function bindEvents() {
     else if (action === 'reorder') openReorder(storeId, sku);
   });
 
-  $('addProductBtn').addEventListener('click', () => openModal('productModal', 'productForm', 'productErrors'));
+  $('addProductBtn').addEventListener('click', () => openModal('productModal', 'productForm', 'productErrors', { id: 'addProductBtn' }));
 
   // Cart
   $('cartLines').addEventListener('input', (e) => {
@@ -648,6 +701,7 @@ function bindEvents() {
     renderCart();
   });
 
+  for (const id of ['receiveModal', 'transferModal', 'reorderModal', 'productModal']) bindModalFocus(id);
   $('receiveForm').addEventListener('submit', onReceiveSubmit);
   $('transferForm').addEventListener('submit', onTransferSubmit);
   $('reorderForm').addEventListener('submit', onReorderSubmit);

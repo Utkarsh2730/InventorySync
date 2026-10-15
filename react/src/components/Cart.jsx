@@ -1,9 +1,35 @@
+import { useEffect, useRef } from 'react';
 import { findProduct, isPositiveInt } from '../../../js/inventory.js';
 import { inr } from '../format.js';
+
+// While the phone panel is open: focus its close button, close on Escape,
+// stop the page behind it from scrolling, and give focus back on close.
+function usePanelFocus(open, onClose, closeRef) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!open) return undefined;
+    const previous = document.activeElement;
+    closeRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === 'Escape') onCloseRef.current();
+    };
+    const scroll = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = scroll;
+      if (previous && previous.focus) previous.focus();
+    };
+  }, [open, closeRef]);
+}
 
 // Large screens: a normal card. Below lg: an offcanvas panel (Bootstrap's
 // offcanvas-lg classes, opened and closed with React state).
 export function Cart({ state, storeId, storeName, cart, errors, open, onClose, onQtyChange, onRemove, onClear, onCheckout }) {
+  const closeRef = useRef(null);
+  usePanelFocus(open, onClose, closeRef);
   const lines = Object.entries(cart);
   let total = 0;
   for (const [sku, qty] of lines) {
@@ -17,7 +43,7 @@ export function Cart({ state, storeId, storeName, cart, errors, open, onClose, o
         role={open ? 'dialog' : undefined} aria-modal={open ? 'true' : undefined}>
         <div className="offcanvas-header">
           <p className="offcanvas-title h5 mb-0" aria-hidden="true">Cart</p>
-          <button type="button" className="btn-close" aria-label="Close cart" onClick={onClose} />
+          <button type="button" className="btn-close" aria-label="Close cart" onClick={onClose} ref={closeRef} />
         </div>
         <div className="offcanvas-body">
           <section className="card w-100" aria-labelledby="cartHeading">

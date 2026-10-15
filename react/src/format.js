@@ -14,7 +14,7 @@ export function storeNameOf(state, storeId) {
 
 export function userLabel(state, u) {
   const where = u.storeId ? storeNameOf(state, u.storeId) : 'all stores';
-  return `${u.name}: ${ROLE_LABELS[u.role]}, ${where}`;
+  return `${u.name} · ${ROLE_LABELS[u.role]}, ${where}`;
 }
 
-export const BADGE_CLASS = { OK: 'text-bg-success', Low: 'text-bg-warning', Out: 'text-bg-danger' };
+export const BADGE_CLASS = { OK: 'text-bg-success', Low: 'text-bg-warning', Out: 'text-bg-danger', Stopped: 'text-bg-secondary' };

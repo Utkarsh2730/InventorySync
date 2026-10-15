@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { can } from '../../../js/inventory.js';
 import { BADGE_CLASS, inr } from '../format.js';
 
@@ -5,27 +6,42 @@ export function StatusBadge({ status }) {
   return <span className={`badge status-badge ${BADGE_CLASS[status]}`}>{status}</span>;
 }
 
-export function SignIn({ users, storeName, onSignIn }) {
+// Shop sign-in with an invite code from head office (no admin sign-in here).
+export function SignIn({ errors, onSignIn }) {
+  const [code, setCode] = useState('');
+  const [validated, setValidated] = useState(false);
+  const submit = (e) => {
+    e.preventDefault();
+    setValidated(true);
+    if (!e.currentTarget.checkValidity()) return;
+    if (onSignIn(code)) {
+      setCode('');
+      setValidated(false);
+    }
+  };
   return (
     <section aria-labelledby="signInHeading" className="row justify-content-center">
       <div className="col-12 col-md-8 col-lg-5">
         <div className="card">
           <div className="card-body">
-            <h1 id="signInHeading" className="h4">Sign in as a sample user</h1>
-            <p className="text-body-secondary small mb-3">
-              Simulated sign-in for the demo: no passwords. Each browser tab remembers its own user,
-              so you can open two tabs as two different people.
-            </p>
-            <div className="list-group">
-              {users.map((u) => (
-                <button key={u.id} type="button" className="list-group-item list-group-item-action" onClick={() => onSignIn(u.id)}>
-                  <span className="fw-semibold d-block">{u.name}</span>
-                  <span className="small text-body-secondary">
-                    {u.role === 'manager' ? 'Store Manager' : 'Inventory Buyer'} · {u.storeId ? storeName(u.storeId) : 'all stores'}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <h1 id="signInHeading" className="h4">Shop sign in</h1>
+            <p className="text-body-secondary small mb-3">Enter the invite code your head office gave your shop.</p>
+            <form noValidate className={validated ? 'was-validated' : ''} onSubmit={submit}>
+              {errors.length > 0 && (
+                <div className="alert alert-danger" role="alert">
+                  <p className="fw-semibold mb-1">Refused. Nothing was changed:</p>
+                  <ul className="mb-0">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+                </div>
+              )}
+              <label htmlFor="inviteCode" className="form-label">Invite code</label>
+              <input id="inviteCode" type="text" className="form-control form-control-lg invite-input" required
+                placeholder="ABCD-EFGH-JKLM" autoComplete="off" autoCapitalize="characters" spellCheck={false}
+                pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" aria-describedby="inviteHelp"
+                value={code} onChange={(e) => setCode(e.target.value)} />
+              <div className="invalid-feedback">Enter the 12-character code, for example ABCD-EFGH-JKLM.</div>
+              <p id="inviteHelp" className="form-text mb-3">Dashes and capital letters are optional.</p>
+              <button type="submit" className="btn btn-primary w-100">Sign in</button>
+            </form>
           </div>
         </div>
       </div>
@@ -91,10 +107,11 @@ export function Filters({ stores, filters, onChange }) {
       <div className="col-6 col-md-3">
         <label htmlFor="statusFilter" className="form-label small mb-1">Status</label>
         <select id="statusFilter" className="form-select" value={filters.status} onChange={set('status')}>
-          <option value="all">All statuses</option>
+          <option value="all">All items on sale</option>
           <option value="OK">OK</option>
           <option value="Low">Low</option>
           <option value="Out">Out</option>
+          <option value="Stopped">Stopped selling</option>
         </select>
       </div>
     </form>
@@ -112,10 +129,15 @@ function RowActions({ user, row, onAction }) {
     </button>
   );
   const buttons = [];
-  if (can(user, 'sell', row.storeId)) buttons.push(btn('sell', 'Add to cart', 'btn-primary', row.qty === 0));
+  if (can(user, 'sell', row.storeId) && !row.stopped) buttons.push(btn('sell', 'Add to cart', 'btn-primary', row.qty === 0));
   if (can(user, 'receive', row.storeId)) buttons.push(btn('receive', 'Receive', 'btn-outline-primary'));
   if (can(user, 'transfer', row.storeId)) buttons.push(btn('transfer', 'Transfer', 'btn-outline-primary', row.qty === 0));
   if (can(user, 'setReorder', row.storeId)) buttons.push(btn('reorder', 'Reorder', 'btn-outline-secondary', false, 'Reorder level'));
+  if (can(user, 'setSelling', row.storeId)) {
+    buttons.push(row.stopped
+      ? btn('resume', 'Resume', 'btn-outline-success', false, 'Resume selling')
+      : btn('stop', 'Stop', 'btn-outline-secondary', false, 'Stop selling'));
+  }
   if (buttons.length === 0) return <span className="text-body-secondary small">View only</span>;
   return (
     <div className="btn-group btn-group-sm row-actions" role="group" aria-label={`Actions for ${row.name} at ${row.storeName}`}>
@@ -124,7 +146,7 @@ function RowActions({ user, row, onAction }) {
   );
 }
 
-export function StockTable({ rows, user, onAction, showChainTotal }) {
+export function StockTable({ rows, user, onAction, showChainTotal, emptyText }) {
   return (
     <div className="table-responsive stock-scroll" tabIndex={0} role="region" aria-label="Stock list (scrolls)">
       <table className="table table-sm table-hover align-middle mb-0">
@@ -145,10 +167,10 @@ export function StockTable({ rows, user, onAction, showChainTotal }) {
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={10} className="text-center text-body-secondary py-4">No items match these filters.</td></tr>
+            <tr><td colSpan={10} className="text-center text-body-secondary py-4">{emptyText}</td></tr>
           )}
           {rows.map((r) => (
-            <tr key={`${r.storeId}|${r.sku}`}>
+            <tr key={`${r.storeId}|${r.sku}`} className={r.stopped ? 'row-stopped' : undefined}>
               <td>{r.storeName}</td>
               <td><code>{r.sku}</code></td>
               <td className="product-name">{r.name}</td>

@@ -71,10 +71,7 @@
       "COFFEE-200G": { "qty": 6, "reorderLevel": 5 }
     }
   },
-  "users": [
-    { "id": "u-asha", "name": "Asha Rao", "role": "manager", "storeId": "koramangala" },
-    { "id": "u-meena", "name": "Meena Iyer", "role": "manager", "storeId": "indiranagar" },
-    { "id": "u-ravi", "name": "Ravi Kumar", "role": "buyer", "storeId": null }
-  ],
+  "users": [],
+  "invites": [],
   "log": []
 }

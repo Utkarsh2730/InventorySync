@@ -1,8 +1,15 @@
 # InventorySync
 
 Multi-store stock sync with low-stock alerts for regional retail chains.
-Two roles: **Store Manager** (sells and receives in their own store) and
-**Inventory Buyer** (receives, transfers, sets reorder levels, adds products; cannot sell).
+
+There are two separate pages, and neither shows the other's sign-in:
+
+| Page | Who | Signs in with |
+|------|-----|---------------|
+| **Shop page** `/` (`index.html`) | Each shop (Store Manager), or head office (Inventory Buyer) | An **invite code** created by the admin |
+| **Admin page** `/admin.html` | Head-office admin | An **admin passcode** set on the first visit |
+
+The shop page never mentions or links to the admin page; bookmark `/admin.html` yourself.
 
 Two front ends share the same rules, storage and data:
 
@@ -14,10 +21,17 @@ Two front ends share the same rules, storage and data:
 Both use the same localStorage key, so a sale in a React tab shows up in a vanilla tab and the other way round.
 
 **Live demo:** <https://utkarsh2730.github.io/InventorySync/>
+· Admin: <https://utkarsh2730.github.io/InventorySync/admin.html>
 · React version: <https://utkarsh2730.github.io/InventorySync/react-app/>
 · Tests: <https://utkarsh2730.github.io/InventorySync/tests.html>
+· Vercel: <https://inventory-sync-lovat.vercel.app>
 
-> Sign-in is **simulated**: you pick one of three sample users. All data lives in your own browser.
+> **Browser-only demo.** There is no server: stock, shops, invite codes and the admin passcode
+> live in each browser's own storage. An invite code therefore works **only in the browser where
+> the admin created it** (open the admin page and the shop page in two tabs of the same browser).
+> The passcode is stored as a salted PBKDF2 hash, but anyone with this browser's developer tools
+> can change stored data. Real shop accounts on their own phones need the pilot's server-side
+> sign-in (R11, Supabase).
 
 ---
 
@@ -56,6 +70,7 @@ ES modules do not load from `file://`, so use a local web server:
    (or `localhost:5500`).
 4. Open `http://127.0.0.1:5500/tests.html` to run the critical-path checks. Every line should say PASS.
 5. The built React version is at `http://127.0.0.1:5500/react-app/`.
+6. The admin page is at `http://127.0.0.1:5500/admin.html` (see 1.5 for the first run).
 
 ### 1.3 React version (Node.js 20.19+ or 22.12+)
 
@@ -99,81 +114,108 @@ and Bootstrap's CSS classes, so it does not need Bootstrap's JavaScript.
 
 All paths in the app are relative, so it works from the `/inventorysync/` sub-path.
 
+### 1.5 First run: admin passcode and invite codes
+
+1. Open `/admin.html`. On the first visit in a browser it asks you to **set an admin passcode**
+   (at least 8 characters). Keep it safe: it cannot be recovered. To start over, clear this
+   site's data in the browser.
+2. In **Create invite code**, choose a shop (or **Head office** for the buyer's all-shops view),
+   give the code a name (e.g. "Indiranagar counter") and click **Generate code**. Copy it.
+3. Open `/` in another tab of the same browser and enter the code. Codes are not case sensitive
+   and the dashes are optional.
+4. A code keeps working until you **Revoke** it on the admin page; the shop is signed out at once.
+5. **Add shop** creates a new shop with every product at 0. Then create a code for it.
+6. **Reset data** (admin page only) restores the sample stock and deletes added shops and all codes.
+
 ---
 
 ## 2. Files
 
 | File | Purpose |
 |------|---------|
-| `index.html` | The single page: navbar with user switcher, sign-in screen, 4 summary cards, stock table, alert panel, cart (offcanvas on phones), modals for Receive, Transfer, Reorder level and Add product. |
-| `css/style.css` | Custom styles, focus outlines, no-sideways-scroll rules, `@media print` stylesheet. |
-| `js/inventory.js` | Pure rules, no DOM: `statusOf`, `can`, `checkout`, `transfer`, `receive`, `setReorderLevel`, `addProduct`, `filterRows`, plus read-only views. |
+| `index.html` | Shop page: invite-code sign-in, 4 summary cards, stock table, alert panel, cart (offcanvas on phones), modals for Receive, Transfer, Reorder level and Add product. |
+| `admin.html` | Admin page: passcode sign-in, shops overview, Add shop, Create invite code, invite code list (Copy / Revoke), Reset data. |
+| `css/style.css` | Custom styles, focus outlines, scroll boxes, alignment, `@media print` stylesheet. Shared by both pages and the React build. |
+| `js/inventory.js` | Pure rules, no DOM: `statusOf`, `can`, `checkout`, `transfer`, `receive`, `setReorderLevel`, `addProduct`, `setSelling`, `createInvite`, `revokeInvite`, `signInWithCode`, `userFromInvite`, `addStore`, `filterRows`, plus read-only views. |
 | `js/store.js` | `load`, `save`, `reset`, `readLatest`, `subscribe` (BroadcastChannel and `storage` event). |
 | `js/export.js` | CSV export of the filtered rows (UTF-8 BOM, proper escaping, Blob download). |
-| `js/app.js` | Draws the screen and handles clicks. |
+| `js/ui.js` | Shared page helpers: safe element builder, toasts, banners, error boxes, dark mode. |
+| `js/app.js` | Shop page: draws the screen and handles clicks. |
+| `js/admin.js` | Admin page: passcode (PBKDF2), random invite codes, shops and codes. |
 | `js/tests.js`, `tests.html` | Browser tests, no library. In-memory data only. |
-| `data/sample-data.json` | 3 stores, 14 products, stock, 3 users. |
+| `data/sample-data.json` | 3 shops, 14 products, stock; no users or invite codes (the admin creates codes). |
 | `vendor/bootstrap/` | Bootstrap 5.3.8 CSS and JS bundle. |
-| `react/` | React + Vite source: `src/App.jsx`, `src/useInventory.js` (wraps `store.js`), `src/components/` (Dashboard, Cart, Dialogs, Modal). |
-| `react-app/` | Built React site (output of `npm run build`). |
+| `react/` | React + Vite source of the shop page: `src/App.jsx`, `src/useInventory.js` (wraps `store.js`), `src/components/`. |
+| `react-app/` | Built React site (output of `npm run build`). The admin page is the vanilla `admin.html` for both. |
 
 ### Data (one localStorage key: `inventorysync:v1`)
 
 ```json
 { "version": 1, "stores": [...], "products": [...],
   "stock": { "<storeId>": { "<sku>": { "qty": 3, "reorderLevel": 5 } } },
-  "users": [...], "log": [ { "time", "type", "storeId", "sku", "change", "userId" } ] }
+  "users": [], "invites": [ { "code", "role", "storeId", "label", "createdAt", "lastUsedAt", "revoked" } ],
+  "log": [ { "time", "type", "storeId", "sku", "change", "userId" } ] }
 ```
 
-Other keys: `inventorysync:theme` (localStorage, dark/light choice) and `inventorysync:userId`
-(sessionStorage, the signed-in user for that tab).
+A stock entry can also have `"stopped": true` when that shop has stopped selling the item.
+
+Other keys: `inventorysync:theme` (localStorage, dark/light choice), `inventorysync:admin`
+(localStorage, the admin passcode's salt and PBKDF2 hash), `inventorysync:inviteCode` and
+`inventorysync:adminSession` (sessionStorage, who is signed in on that tab).
 
 ### Roles: `can(user, action, storeId)`
 
-| Action (`can` name) | Store Manager | Inventory Buyer |
-|---------------------|---------------|-----------------|
-| `sell`              | own store only | never |
-| `receive`           | own store only | any store |
-| `transfer`          | never | any store |
-| `setReorder`        | never | any store |
-| `addProduct`        | never | yes (chain-wide) |
+| Action (`can` name) | Shop (Store Manager code) | Head office (Inventory Buyer code) | Admin |
+|---------------------|---------------------------|-------------------------------------|-------|
+| `sell`              | own shop only | never | never |
+| `receive`           | own shop only | any shop | never |
+| `transfer`          | never | any shop | never |
+| `setReorder`        | never | any shop | never |
+| `addProduct`        | yes (chain-wide) | yes (chain-wide) | never |
+| `setSelling` (Stop / Resume) | own shop only | never | never |
+| `manageInvites`, `addStore` | never | never | yes |
 
-`can()` is the first check in every write function in `inventory.js`. Hidden buttons are only a convenience.
+`can()` is the first check in every write function in `inventory.js`. Hidden buttons are only a
+convenience. Signing in with a code is the one write with no signed-in user yet: a valid,
+unrevoked code is itself the permission.
 
-### Sample users
+### Stopped selling
 
-| User | Role | Store |
-|------|------|-------|
-| Asha Rao | Store Manager | Koramangala |
-| Meena Iyer | Store Manager | Indiranagar |
-| Ravi Kumar | Inventory Buyer | all stores |
+Each row of a shop's own items has a one-click **Stop** button. A stopped item is greyed out,
+cannot be sold, and leaves that shop's alerts and Low/Out counts. **Stopped selling (N)** in the
+toolbar lists all of them in one click; **Resume** puts an item back on sale.
 
 ---
 
-## 3. Manual demo / test script (R1–R10)
+## 3. Manual demo / test script
 
-Start with **Reset data** so you begin from the sample.
+Start on the admin page: **Reset data**, then create one code for **Koramangala**, one for
+**Indiranagar** and one for **Head office** (see 1.5). Use them on the shop page in other tabs of
+the same browser.
 
 | # | Steps | Expected |
 |---|-------|----------|
-| 1 | Open the app, sign in as **Asha Rao**. | The Store filter starts on **Koramangala**: the table, the summary (14 products, 3 Low, 1 Out) and the alerts show Koramangala only. Rows have Add to cart and Receive. Pick **All stores** to see every branch (9 Low, 4 Out). |
-| 2 | **R1.** Koramangala, *Toor Dal 1 kg* has 3. Add it to the cart twice, then **Checkout**. | “Sale recorded”. Qty is now 1, status Low. |
-| 3 | Add Toor Dal once, change the cart quantity to **2**, **Checkout**. | Refused: “only 1 in stock … cannot sell 2”. Qty stays 1. |
+| 1 | Shop page: sign in with the **Koramangala** code. | The Store filter starts on Koramangala: table, summary (3 Low, 1 Out) and alerts show Koramangala only. Rows have Add to cart, Receive and Stop. There is no admin sign-in, user switcher or Reset button. |
+| 2 | **R1.** *Toor Dal 1 kg* has 3. Add it to the cart twice, then **Checkout**. | "Sale recorded". Qty is now 1, status Low. |
+| 3 | Add Toor Dal once, change the cart quantity to **2**, **Checkout**. | Refused: "only 1 in stock … cannot sell 2". Qty stays 1. |
 | 4 | Put a valid line and an oversized line in the cart, **Checkout**. | Whole sale refused; neither quantity changes. |
-| 5 | **R2.** Set Store to **All stores** and look at the *All stores total* column. | Equals the sum of that SKU across the three stores. The column is hidden when one store is selected. |
-| 6 | **R4.** Open a second tab at the same URL, sign in as **Ravi Kumar**. Sell an item in tab 1. | Tab 2 updates qty, cards and alerts within 1 second, with no reload. |
-| 7 | **R3.** As Ravi, *Cow Ghee* row for Indiranagar → **Transfer** 10 to Koramangala. | Indiranagar 25 → 15, Koramangala 0 → 10, all-stores total unchanged; the Koramangala Out alert clears. |
-| 8 | **R5/R6.** As Ravi, **Reorder level** on any row, set it above the quantity. | Status turns Low and the alert appears at once. Asha never sees Transfer or Reorder buttons; the rule tests in `tests.html` confirm `transfer`/`setReorder` are refused for managers even if called directly. |
-| 9 | **R6.** As Ravi, try to sell. | No cart is shown; `checkout` refuses a Buyer (see `tests.html`). |
-| 10 | As Ravi, **Receive** 10 at any store, and **Add product** (e.g. `SALT-500G`). | Stock goes up; the new product appears at 0 (Out) in every store. |
-| 11 | **R7.** Refresh the page. | All changes are still there. **Reset data** → confirm → sample values return. |
-| 12 | **R9.** Type `ghee` in Search, then pick Store = Jayanagar, Status = Low. | Table narrows to matching rows; “Showing N of 42” updates. |
-| 13 | **R10.** With filters on, click **Export CSV**. Open the file in Excel. | Same rows as the screen; `₹` and `बासमती` / `ರಾಗಿ` display correctly; `Biscuits, Marie "Family Pack"` stays in one cell. |
-| 14 | **Print / PDF** → Save as PDF. | Clean report: no navbar, buttons, filters or cart; header shows date and filters. |
-| 15 | **R8.** DevTools → device toolbar → **375 px** wide, then **1366 px**. | No sideways page scroll. Cards stack in one column at 375 px; the table scrolls inside its own box; the Cart button opens the offcanvas cart. Also try on a real phone. |
-| 16 | Toggle **Dark mode**, refresh. | Choice is remembered. Without a saved choice, the OS setting is followed. |
-| 17 | Keyboard only: Tab through the page. | Every control is reachable with a visible focus outline; the skip link appears first. |
-| 18 | **React.** Open `react-app/` in one tab and `index.html` in another. Repeat steps 2–8 in the React tab. | Same behaviour and messages; each tab updates the other within 1 second. In React dialogs, focus starts in the first field, Tab stays inside, Escape closes. |
+| 5 | **R2.** Sign in with the **Head office** code. With Store = **All stores**, look at *All stores total*. | Equals the sum of that SKU across the shops. The column is hidden when one shop is selected. |
+| 6 | **R4.** Keep the Koramangala tab open. Sell an item there. | The Head office tab updates qty, cards and alerts within 1 second, with no reload. |
+| 7 | **R3.** Head office: *Cow Ghee* row for Indiranagar → **Transfer** 10 to Koramangala. | Indiranagar 25 → 15, Koramangala 0 → 10, all-stores total unchanged; the Koramangala Out alert clears. |
+| 8 | **R5/R6.** Head office: **Reorder** on any row, set it above the quantity. | Status turns Low and the alert appears at once. Shops never see Transfer or Reorder; `tests.html` confirms the rules refuse them even if called directly. |
+| 9 | **R6.** Head office: try to sell. | No cart is shown; `checkout` refuses a buyer (see `tests.html`). |
+| 10 | Koramangala shop: **Add product** (e.g. `SALT-500G`). | The new product appears at 0 (Out) in every shop. |
+| 11 | **Stop selling.** Koramangala: click **Stop** on any row, then **Stopped selling (1)**. | The item leaves the list and the alerts; the button lists it with a **Resume** button. Resume puts it back. |
+| 12 | **Revoke.** Admin page: **Revoke** the Koramangala code. | The Koramangala tab is signed out at once ("no longer active"); the code no longer signs in. |
+| 13 | **Add shop.** Admin page: add "Whitefield", create a code for it, sign in with it. | Whitefield appears in the shops table and on the shop page with every product at 0. |
+| 14 | **R7.** Refresh any tab. | Changes and sign-ins (per tab) are kept. Admin **Reset data** restores the sample and signs every shop out. |
+| 15 | **R9.** Type `ghee` in Search, then pick a Store and Status = Low. | Table narrows; "Showing N of M items" updates. |
+| 16 | **R10.** With filters on, click **Export CSV**. Open it in Excel. | Same rows as the screen; `₹`, `बासमती`, `ರಾಗಿ` display correctly; `Biscuits, Marie "Family Pack"` stays in one cell. |
+| 17 | **Print / PDF** → Save as PDF. | Clean report: no navbar, buttons, filters or cart; header shows date and filters. |
+| 18 | **R8.** DevTools device toolbar at **375 px**, then **1366 px**. | No sideways page scroll. On laptops the page fits the screen and the table, alerts and cart scroll inside their own boxes. |
+| 19 | Toggle **Dark mode**, refresh. | Choice is remembered on both pages. |
+| 20 | Keyboard only: Tab through both pages. | Every control is reachable with a visible focus outline. |
+| 21 | **React.** Open `react-app/` and repeat steps 1–4 and 11–12. | Same behaviour; the React tab and the shop page update each other. |
 
 ---
 
@@ -186,8 +228,8 @@ Start with **Reset data** so you begin from the sample.
 | R3 | Transfers keep the total | `transfer()` in `inventory.js`; Transfer modal | Test “R3”; demo step 7 |
 | R4 | Changes appear in other tabs within 1 s | `save()` posts on BroadcastChannel `inventorysync`; `subscribe()` (+ `storage` fallback) in `js/store.js` | Demo step 6 |
 | R5 | Low/Out alerts update immediately | `statusOf()`, `alertsOf()`, `summarize()`; `renderAlerts()` / `renderCards()` | Test “Status …”, “R5”; demo step 8 |
-| R6 | Role-based permissions | `can()` first in every write function; sign-in in `app.js` (sessionStorage) | Tests “R6 …”; demo steps 1, 8, 9 |
-| R7 | Persistence, sample data, reset | `load()`, `save()`, `reset()` in `store.js`; `data/sample-data.json` | Demo step 11 |
+| R6 | Role-based permissions | `can()` first in every write function; invite-code sign-in (`signInWithCode`, `userFromInvite`) on the shop page; separate admin page with a PBKDF2 passcode | Tests “R6 …”, “Invites …”; demo steps 1, 8, 9, 12 |
+| R7 | Persistence, sample data, reset | `load()`, `save()`, `reset()` in `store.js`; `data/sample-data.json`; Reset on the admin page | Demo step 14 |
 | R8 | 1366 px and 375 px, no sideways scroll | Bootstrap grid (`col-12 col-sm-6 col-lg-3` cards, `col-lg-9` / `col-lg-3` columns), `table-responsive` scroll box, `offcanvas-lg` cart, `min-width:0` / `overflow-wrap` in `css/style.css` | Demo step 15 |
 | R9 | Search and filters | `filterRows()` in `inventory.js`; input group + selects in `index.html` | Test “R9”; demo step 12 |
 | R10 | CSV export, PDF via print | `js/export.js` (`rowsToCsv`, `downloadRowsAsCsv`); `@media print` in `style.css` | Tests “R10”; demo steps 13–14 |
@@ -197,7 +239,7 @@ Start with **Reset data** so you begin from the sample.
 
 ## 5. Not built (Pilot and later phases)
 
-Real sign-in and per-chain data separation (R11), POS CSV import (R12), barcode scanning (R13),
+Real server-side sign-in and per-chain data separation (R11; the invite codes here are browser-only), POS CSV import (R12), barcode scanning (R13),
 WhatsApp alerts (R14), offline mode (R15), full audit log (R16), transfer suggestions, purchase
 orders, batches, variants and forecasting. These need a hosted backend (Supabase), provider accounts
 (WhatsApp Business) and API keys.

@@ -30,12 +30,11 @@
       <div class="collapse navbar-collapse" id="navMenu">
         <div class="ms-lg-auto d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center py-2 py-lg-0">
           <div id="userControls" class="d-flex flex-wrap gap-2 align-items-center d-none">
-            <label for="userSwitch" class="small mb-0">Signed in as</label>
-            <select id="userSwitch" class="form-select form-select-sm user-switch"></select>
+            <span class="small text-body-secondary">Signed in:</span>
+            <span id="whoAmI" class="small fw-semibold"></span>
             <button id="signOutBtn" type="button" class="btn btn-sm btn-outline-secondary">Sign out</button>
           </div>
           <button id="themeToggle" type="button" class="btn btn-sm btn-outline-secondary">Dark mode</button>
-          <button id="resetBtn" type="button" class="btn btn-sm btn-outline-danger">Reset data</button>
         </div>
       </div>
     </div>
@@ -45,18 +44,26 @@
 
   <main id="main" class="container-fluid py-3">
 
-    <!-- Simulated sign-in (R6). The chosen user is kept in sessionStorage for this tab only. -->
+    <!-- Shop sign-in with an invite code (R6). The code is kept in sessionStorage for this tab only. -->
     <section id="signInScreen" class="d-none" aria-labelledby="signInHeading">
       <div class="row justify-content-center">
         <div class="col-12 col-md-8 col-lg-5">
           <div class="card">
             <div class="card-body">
-              <h1 id="signInHeading" class="h4">Sign in as a sample user</h1>
+              <h1 id="signInHeading" class="h4">Shop sign in</h1>
               <p class="text-body-secondary small mb-3">
-                Simulated sign-in for the demo: no passwords. Each browser tab remembers its own user,
-                so you can open two tabs as two different people.
+                Enter the invite code your head office gave your shop.
               </p>
-              <div id="signInList" class="list-group"></div>
+              <form id="signInForm" novalidate>
+                <div id="signInErrors" class="alert alert-danger d-none" role="alert"></div>
+                <label for="inviteCode" class="form-label">Invite code</label>
+                <input id="inviteCode" type="text" class="form-control form-control-lg invite-input" required
+                       placeholder="ABCD-EFGH-JKLM" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                       pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" aria-describedby="inviteHelp">
+                <div class="invalid-feedback">Enter the 12-character code, for example ABCD-EFGH-JKLM.</div>
+                <p id="inviteHelp" class="form-text mb-3">Dashes and capital letters are optional.</p>
+                <button type="submit" class="btn btn-primary w-100">Sign in</button>
+              </form>
             </div>
           </div>
         </div>
@@ -109,6 +116,7 @@
               <h2 id="stockHeading" class="h5 mb-0">Stock by store</h2>
               <div class="d-flex flex-wrap gap-2 no-print">
                 <button id="addProductBtn" type="button" class="btn btn-sm btn-outline-primary d-none">Add product</button>
+                <button id="stoppedBtn" type="button" class="btn btn-sm btn-outline-secondary d-none" aria-pressed="false">Stopped selling (0)</button>
                 <button id="exportBtn" type="button" class="btn btn-sm btn-outline-secondary">Export CSV</button>
                 <button id="printBtn" type="button" class="btn btn-sm btn-outline-secondary">Print / PDF</button>
                 <button id="cartToggle" type="button" class="btn btn-sm btn-primary d-lg-none d-none"
@@ -134,10 +142,11 @@
                 <div class="col-6 col-md-3">
                   <label for="statusFilter" class="form-label small mb-1">Status</label>
                   <select id="statusFilter" class="form-select">
-                    <option value="all">All statuses</option>
+                    <option value="all">All items on sale</option>
                     <option value="OK">OK</option>
                     <option value="Low">Low</option>
                     <option value="Out">Out</option>
+                    <option value="Stopped">Stopped selling</option>
                   </select>
                 </div>
               </form>

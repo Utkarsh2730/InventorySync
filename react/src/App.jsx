@@ -18,6 +18,10 @@ import {
   findProduct,
   isPositiveInt,
   defaultStoreFor,
+  setSelling,
+  userFromInvite,
+  signInWithCode,
+  normalizeCode,
 } from '../../js/inventory.js';
 import { downloadRowsAsCsv } from '../../js/export.js';
 import { useInventory } from './useInventory.js';
@@ -26,14 +30,25 @@ import { SignIn, SummaryCards, Filters, StockTable, AlertPanel } from './compone
 import { Cart, cartCount } from './components/Cart.jsx';
 import { ReceiveDialog, TransferDialog, ReorderDialog, ProductDialog } from './components/Dialogs.jsx';
 
-const USER_KEY = 'inventorysync:userId'; // sessionStorage: one user per tab
+// sessionStorage: the invite code this tab signed in with. The shop's user is
+// worked out from it on every render, so a revoked code signs the shop out.
+const CODE_KEY = 'inventorysync:inviteCode';
 const THEME_KEY = 'inventorysync:theme';
 
-function readSessionUser() {
+function readSessionCode() {
   try {
-    return sessionStorage.getItem(USER_KEY);
+    return sessionStorage.getItem(CODE_KEY);
   } catch {
     return null;
+  }
+}
+
+function writeSessionCode(code) {
+  try {
+    if (code) sessionStorage.setItem(CODE_KEY, code);
+    else sessionStorage.removeItem(CODE_KEY);
+  } catch {
+    // sessionStorage blocked: sign in again after a refresh
   }
 }
 
@@ -72,9 +87,10 @@ function useTheme() {
 let toastId = 0;
 
 export default function App() {
-  const { state, notice, loadError, latest, write, reset } = useInventory();
+  const { state, notice, loadError, latest, write } = useInventory();
   const [theme, toggleTheme] = useTheme();
-  const [userId, setUserId] = useState(readSessionUser);
+  const [code, setCode] = useState(readSessionCode);
+  const [signInErrors, setSignInErrors] = useState([]);
   const [filters, setFilters] = useState({ query: '', storeId: 'all', status: 'all' });
   const [cart, setCart] = useState({}); // sku -> qty, in memory for this tab
   const [cartErrors, setCartErrors] = useState([]);
@@ -84,12 +100,22 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [banners, setBanners] = useState([]);
 
-  const user = state ? state.users.find((u) => u.id === userId) || null : null;
+  const user = state && code ? userFromInvite(state, code) : null;
   const storeName = useCallback((id) => storeNameOf(state, id), [state]);
 
   useEffect(() => {
     if (notice) setBanners((b) => [...b, notice]);
   }, [notice]);
+
+  // The admin revoked this code (or reset the data): sign the shop out.
+  const codeIsDead = Boolean(state && code && !user);
+  useEffect(() => {
+    if (!codeIsDead) return;
+    writeSessionCode(null);
+    setCode(null);
+    setCart({});
+    setSignInErrors(['Your invite code is no longer active. Ask head office for a new one.']);
+  }, [codeIsDead]);
 
   const toast = useCallback((message, type = 'success') => {
     const id = ++toastId;
@@ -107,8 +133,10 @@ export default function App() {
 
   // The Store filter sets the scope for the cards, the alerts and the table.
   const scopeStore = filters.storeId;
+  // Every row of the chosen store (including stopped items); the filters
+  // then pick what is shown.
   const scopeRows = useMemo(
-    () => (state ? filterRows(buildRows(state), { storeId: scopeStore }) : []),
+    () => (state ? buildRows(state).filter((r) => scopeStore === 'all' || r.storeId === scopeStore) : []),
     [state, scopeStore],
   );
   const visibleRows = useMemo(() => filterRows(scopeRows, filters), [scopeRows, filters]);
@@ -134,14 +162,27 @@ export default function App() {
   }
   if (!state) return <main className="container-fluid py-3"><p>Loading…</p></main>;
 
-  const signIn = (id) => {
-    try {
-      if (id) sessionStorage.setItem(USER_KEY, id);
-      else sessionStorage.removeItem(USER_KEY);
-    } catch {
-      // sessionStorage blocked: pick again after a refresh
+  // Shop sign-in with an invite code from head office. The valid code is the
+  // permission; signing in records when it was used.
+  const signIn = (typed) => {
+    const wanted = normalizeCode(typed);
+    const result = write((s) => signInWithCode(s, wanted, new Date().toISOString()));
+    if (!result.ok) {
+      setSignInErrors(result.errors);
+      return false;
     }
-    setUserId(id);
+    writeSessionCode(wanted);
+    setCode(wanted);
+    setSignInErrors([]);
+    setCart({});
+    setCartErrors([]);
+    toast(`Signed in as ${result.user.name}.`);
+    return true;
+  };
+
+  const signOut = () => {
+    writeSessionCode(null);
+    setCode(null);
     setCart({});
     setCartErrors([]);
     setNavOpen(false);
@@ -189,28 +230,38 @@ export default function App() {
     }
   };
 
+  // One click, no dialog: stop or resume selling an item at this shop.
+  const onSetSelling = (storeId, sku, selling) => {
+    const name = findProduct(state, sku).name;
+    const result = runWrite((s) => setSelling(s, user, storeId, sku, selling),
+      selling ? `${name} is on sale again at ${storeName(storeId)}.` : `Stopped selling ${name} at ${storeName(storeId)}. Find it under "Stopped selling".`);
+    if (!result.ok) toast(result.errors[0], 'danger');
+    else if (!selling) {
+      setCart((c) => {
+        const next = { ...c };
+        delete next[sku];
+        return next;
+      });
+    }
+  };
+
   const onAction = (action, storeId, sku) => {
     if (action === 'sell') addToCart(storeId, sku);
+    else if (action === 'stop') onSetSelling(storeId, sku, false);
+    else if (action === 'resume') onSetSelling(storeId, sku, true);
     else setDialog({ type: action, storeId, sku });
   };
+
+  const canStop = user ? can(user, 'setSelling', user.storeId) : false;
+  const showingStopped = filters.status === 'Stopped';
+  const toggleStopped = () => setFilters(showingStopped
+    ? { ...filters, status: 'all' }
+    : { ...filters, status: 'Stopped', storeId: user.storeId });
 
   const closeDialog = () => setDialog(null);
   const finish = (result) => {
     if (result.ok) closeDialog();
     return result;
-  };
-
-  const onReset = async () => {
-    if (!window.confirm('Reset all data to the sample? Every change in this browser will be lost.')) return;
-    try {
-      const result = await reset();
-      setCart({});
-      setCartErrors([]);
-      if (result.notice) setBanners((b) => [...b, result.notice]);
-      else toast('Sample data restored.');
-    } catch (err) {
-      toast(`Reset failed: ${err.message}`, 'danger');
-    }
   };
 
   const onExport = () => {
@@ -225,7 +276,7 @@ export default function App() {
   const scopeName = scopeStore === 'all' ? 'All stores' : storeName(scopeStore);
 
   const printMeta = user
-    ? `Printed ${new Date().toLocaleString('en-IN')} by ${user.name} · Store: ${scopeName} · Status: ${filters.status === 'all' ? 'All statuses' : filters.status}${filters.query ? ` · Search: "${filters.query}"` : ''}`
+    ? `Printed ${new Date().toLocaleString('en-IN')} by ${user.name} · Store: ${scopeName} · Status: ${{ all: 'All items on sale', Stopped: 'Stopped selling' }[filters.status] || filters.status}${filters.query ? ` · Search: "${filters.query}"` : ''}`
     : '';
 
   return (
@@ -245,18 +296,14 @@ export default function App() {
             <div className="ms-lg-auto d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center py-2 py-lg-0">
               {user && (
                 <div className="d-flex flex-wrap gap-2 align-items-center">
-                  <label htmlFor="userSwitch" className="small mb-0">Signed in as</label>
-                  <select id="userSwitch" className="form-select form-select-sm user-switch" value={user.id}
-                    onChange={(e) => signIn(e.target.value)}>
-                    {state.users.map((u) => <option key={u.id} value={u.id}>{userLabel(state, u)}</option>)}
-                  </select>
-                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => signIn(null)}>Sign out</button>
+                  <span className="small text-body-secondary">Signed in:</span>
+                  <span className="small fw-semibold">{userLabel(state, user)}</span>
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={signOut}>Sign out</button>
                 </div>
               )}
               <button type="button" className="btn btn-sm btn-outline-secondary" onClick={toggleTheme}>
                 {theme === 'dark' ? 'Light mode' : 'Dark mode'}
               </button>
-              <button type="button" className="btn btn-sm btn-outline-danger" onClick={onReset}>Reset data</button>
             </div>
           </div>
         </div>
@@ -275,7 +322,7 @@ export default function App() {
       )}
 
       <main id="main" className="container-fluid py-3">
-        {!user && <SignIn users={state.users} storeName={storeName} onSignIn={signIn} />}
+        {!user && <SignIn errors={signInErrors} onSignIn={signIn} />}
 
         {user && (
           <>
@@ -298,6 +345,11 @@ export default function App() {
                           Add product
                         </button>
                       )}
+                      {canStop && (
+                        <button type="button" className="btn btn-sm btn-outline-secondary" aria-pressed={showingStopped} onClick={toggleStopped}>
+                          {showingStopped ? 'Show items on sale' : `Stopped selling (${summarize(state, user.storeId).stopped})`}
+                        </button>
+                      )}
                       <button type="button" className="btn btn-sm btn-outline-secondary" onClick={onExport}>Export CSV</button>
                       <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => window.print()}>Print / PDF</button>
                       {canSell && (
@@ -313,7 +365,8 @@ export default function App() {
                     <p className="small text-body-secondary mb-2" aria-live="polite">
                       Showing {visibleRows.length} of {scopeRows.length} items · {scopeName}
                     </p>
-                    <StockTable rows={visibleRows} user={user} onAction={onAction} showChainTotal={showChainTotal} />
+                    <StockTable rows={visibleRows} user={user} onAction={onAction} showChainTotal={showChainTotal}
+                      emptyText={showingStopped ? 'This shop has not stopped selling any items. Use "Stop" on a row to stop selling an item.' : 'No items match these filters.'} />
                   </div>
                 </section>
               </div>

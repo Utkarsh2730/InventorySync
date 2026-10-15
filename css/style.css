@@ -15,9 +15,35 @@
   overflow-wrap: anywhere;
 }
 
-.user-switch {
-  width: auto;
-  max-width: 100%;
+/* Items a shop has stopped selling are greyed out. */
+.row-stopped td:not(.actions-cell) {
+  color: var(--bs-secondary-color);
+}
+
+/* Admin page: a freshly created invite code, easy to read out or copy. */
+.new-code-box {
+  padding: 0.75rem;
+  border: 1px dashed var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background-color: var(--bs-tertiary-bg);
+}
+
+.new-code,
+.invite-code {
+  font-size: 1.15rem;
+  letter-spacing: 0.06em;
+  color: var(--bs-body-color);
+  white-space: nowrap;
+}
+
+.invite-code {
+  font-size: 0.95rem;
+}
+
+.invite-input {
+  font-family: var(--bs-font-monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* Toasts are 350 px wide by default; keep them inside a 375 px screen. */

@@ -11,6 +11,7 @@ import {
   receive,
   setReorderLevel,
   addProduct,
+  setSelling,
   buildRows,
   filterRows,
   summarize,
@@ -19,25 +20,27 @@ import {
   findStore,
   isPositiveInt,
   defaultStoreFor,
+  userFromInvite,
+  signInWithCode,
+  normalizeCode,
 } from './inventory.js';
 import * as store from './store.js';
 import { downloadRowsAsCsv } from './export.js';
+import { bs, inr, $, h, showBanner, toast, showErrors, hideErrors, initTheme } from './ui.js';
 
-const USER_KEY = 'inventorysync:userId'; // sessionStorage: one user per tab
-const THEME_KEY = 'inventorysync:theme'; // localStorage: dark/light choice
-
-const bs = window.bootstrap || null; // Bootstrap's JS bundle (from vendor/)
-const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// sessionStorage: the invite code this tab signed in with. The shop's "user"
+// is worked out from that code on every redraw, so revoking a code in the
+// admin page signs the shop out straight away.
+const CODE_KEY = 'inventorysync:inviteCode';
 
 let state = null; // the whole saved data object
+let signedInCode = null;
 let currentUser = null;
 const cart = new Map(); // sku -> qty, always for the signed-in manager's own store (kept in memory, per tab)
 const filters = { query: '', storeId: 'all', status: 'all' };
 let visibleRows = []; // rows currently shown in the table (also what CSV exports)
 let modalContext = {}; // { storeId, sku } for the modal that is open
 let modalReturnFocus = null; // where keyboard focus goes when the modal closes
-
-const $ = (id) => document.getElementById(id);
 
 // Redraws replace the table rows, so the focused button is a new element
 // afterwards. A "focus key" describes the focused control (by id, or by its
@@ -67,22 +70,6 @@ function restoreFocus(key) {
   return true;
 }
 
-// Build an element safely. Text always goes in via textContent, never as HTML,
-// so product names typed by users cannot inject markup.
-function h(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (value === null || value === undefined || value === false) continue;
-    if (key === 'class') node.className = value;
-    else node.setAttribute(key, value === true ? '' : String(value));
-  }
-  for (const child of children.flat()) {
-    if (child === null || child === undefined || child === false) continue;
-    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
-  }
-  return node;
-}
-
 function storeNameOf(storeId) {
   const s = findStore(state, storeId);
   return s ? s.name : storeId;
@@ -90,53 +77,7 @@ function storeNameOf(storeId) {
 
 function userLabel(u) {
   const where = u.storeId ? storeNameOf(u.storeId) : 'all stores';
-  return `${u.name}: ${ROLE_LABELS[u.role]}, ${where}`;
-}
-
-// ---------------------------------------------------------------------------
-// Messages
-// ---------------------------------------------------------------------------
-
-function showBanner(message, type = 'warning') {
-  const alert = h('div', { class: `alert alert-${type} alert-dismissible`, role: 'alert' },
-    message,
-    h('button', { type: 'button', class: 'btn-close', 'data-bs-dismiss': 'alert', 'aria-label': 'Close' }));
-  $('banner').append(alert);
-}
-
-function toast(message, type = 'success') {
-  const isError = type === 'danger';
-  const el = h('div', {
-    class: `toast align-items-center text-bg-${type} border-0`,
-    role: isError ? 'alert' : 'status',
-    'aria-live': isError ? 'assertive' : 'polite',
-    'aria-atomic': 'true',
-  },
-  h('div', { class: 'd-flex' },
-    h('div', { class: 'toast-body' }, message),
-    h('button', { type: 'button', class: 'btn-close btn-close-white me-2 m-auto', 'data-bs-dismiss': 'toast', 'aria-label': 'Close' })));
-  $('toastArea').append(el);
-  if (bs) {
-    el.addEventListener('hidden.bs.toast', () => el.remove());
-    bs.Toast.getOrCreateInstance(el, { delay: isError ? 6000 : 3500 }).show();
-  } else {
-    el.classList.add('show');
-    setTimeout(() => el.remove(), 5000);
-  }
-}
-
-function showErrors(boxId, errors) {
-  const box = $(boxId);
-  box.replaceChildren(
-    h('p', { class: 'fw-semibold mb-1' }, 'Refused. Nothing was changed:'),
-    h('ul', { class: 'mb-0' }, errors.map((e) => h('li', {}, e))));
-  box.classList.remove('d-none');
-}
-
-function hideErrors(boxId) {
-  const box = $(boxId);
-  box.replaceChildren();
-  box.classList.add('d-none');
+  return `${u.name} · ${ROLE_LABELS[u.role]}, ${where}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +89,7 @@ function refreshFromStorage() {
   const latest = store.readLatest();
   if (latest) {
     state = latest;
-    if (currentUser) currentUser = state.users.find((u) => u.id === currentUser.id) || null;
+    currentUser = signedInCode ? userFromInvite(state, signedInCode) : null;
   }
 }
 
@@ -185,10 +126,8 @@ function render() {
   $('appScreen').classList.toggle('d-none', !signedIn);
   $('userControls').classList.toggle('d-none', !signedIn);
 
-  if (!signedIn) {
-    renderSignIn();
-  } else {
-    renderUserSwitch();
+  if (signedIn) {
+    renderWho();
     renderToolbar();
     renderCards();
     renderStoreFilter();
@@ -201,21 +140,10 @@ function render() {
   restoreFocus(focusKey);
 }
 
-function renderSignIn() {
-  const items = state.users.map((u) => h('button', {
-    type: 'button',
-    class: 'list-group-item list-group-item-action',
-    'data-user-id': u.id,
-  },
-  h('span', { class: 'fw-semibold d-block' }, u.name),
-  h('span', { class: 'small text-body-secondary' }, `${ROLE_LABELS[u.role]} · ${u.storeId ? storeNameOf(u.storeId) : 'all stores'}`)));
-  $('signInList').replaceChildren(...items);
-}
-
-function renderUserSwitch() {
-  const select = $('userSwitch');
-  select.replaceChildren(...state.users.map((u) => h('option', { value: u.id }, userLabel(u))));
-  select.value = currentUser.id;
+// Signed-in shop shown in the navbar (no user switcher: each shop signs in
+// with its own invite code).
+function renderWho() {
+  $('whoAmI').textContent = userLabel(currentUser);
 }
 
 function renderToolbar() {
@@ -223,6 +151,17 @@ function renderToolbar() {
   const canSell = can(currentUser, 'sell', currentUser.storeId);
   $('cartWrap').classList.toggle('d-none', !canSell);
   $('cartToggle').classList.toggle('d-none', !canSell);
+
+  // One click lists the items this shop has stopped selling; again goes back.
+  const canStop = can(currentUser, 'setSelling', currentUser.storeId);
+  const btn = $('stoppedBtn');
+  btn.classList.toggle('d-none', !canStop);
+  if (canStop) {
+    const showing = filters.status === 'Stopped';
+    const count = summarize(state, currentUser.storeId).stopped;
+    btn.textContent = showing ? 'Show items on sale' : `Stopped selling (${count})`;
+    btn.setAttribute('aria-pressed', String(showing));
+  }
 }
 
 // The Store filter sets the scope for the cards, the alerts and the table.
@@ -256,7 +195,7 @@ function renderStoreFilter() {
 }
 
 function statusBadge(status) {
-  const cls = { OK: 'text-bg-success', Low: 'text-bg-warning', Out: 'text-bg-danger' }[status];
+  const cls = { OK: 'text-bg-success', Low: 'text-bg-warning', Out: 'text-bg-danger', Stopped: 'text-bg-secondary' }[status];
   return h('span', { class: `badge status-badge ${cls}` }, status);
 }
 
@@ -275,12 +214,17 @@ function actionButton(action, label, row, style, disabled = false, fullLabel = l
 
 function rowElement(r) {
   const actions = [];
-  if (can(currentUser, 'sell', r.storeId)) actions.push(actionButton('sell', 'Add to cart', r, 'btn-primary', r.qty === 0));
+  if (can(currentUser, 'sell', r.storeId) && !r.stopped) actions.push(actionButton('sell', 'Add to cart', r, 'btn-primary', r.qty === 0));
   if (can(currentUser, 'receive', r.storeId)) actions.push(actionButton('receive', 'Receive', r, 'btn-outline-primary'));
   if (can(currentUser, 'transfer', r.storeId)) actions.push(actionButton('transfer', 'Transfer', r, 'btn-outline-primary', r.qty === 0));
   if (can(currentUser, 'setReorder', r.storeId)) actions.push(actionButton('reorder', 'Reorder', r, 'btn-outline-secondary', false, 'Reorder level'));
+  if (can(currentUser, 'setSelling', r.storeId)) {
+    actions.push(r.stopped
+      ? actionButton('resume', 'Resume', r, 'btn-outline-success', false, 'Resume selling')
+      : actionButton('stop', 'Stop', r, 'btn-outline-secondary', false, 'Stop selling'));
+  }
 
-  return h('tr', {},
+  return h('tr', { class: r.stopped ? 'row-stopped' : null },
     h('td', {}, r.storeName),
     h('td', {}, h('code', {}, r.sku)),
     h('td', { class: 'product-name' }, r.name),
@@ -296,19 +240,24 @@ function rowElement(r) {
 }
 
 function renderTable() {
-  const scopeRows = filterRows(buildRows(state), { storeId: filters.storeId });
+  // Every row of the chosen store (including stopped items); the filters
+  // then pick what is shown.
+  const scopeRows = buildRows(state).filter((r) => filters.storeId === 'all' || r.storeId === filters.storeId);
   visibleRows = filterRows(scopeRows, filters);
   $('chainTotalHead').classList.toggle('d-none', !showChainTotal());
   const body = $('stockBody');
   if (visibleRows.length === 0) {
-    body.replaceChildren(h('tr', {}, h('td', { colspan: '10', class: 'text-center text-body-secondary py-4' }, 'No items match these filters.')));
+    const message = filters.status === 'Stopped'
+      ? 'This shop has not stopped selling any items. Use "Stop" on a row to stop selling an item.'
+      : 'No items match these filters.';
+    body.replaceChildren(h('tr', {}, h('td', { colspan: '10', class: 'text-center text-body-secondary py-4' }, message)));
   } else {
     body.replaceChildren(...visibleRows.map(rowElement));
   }
   $('rowCount').textContent = `Showing ${visibleRows.length} of ${scopeRows.length} items · ${scopeName()}`;
 
   const storeText = scopeName();
-  const statusText = filters.status === 'all' ? 'All statuses' : filters.status;
+  const statusText = { all: 'All items on sale', Stopped: 'Stopped selling' }[filters.status] || filters.status;
   const searchText = filters.query ? ` · Search: "${filters.query}"` : '';
   $('printMeta').textContent = `Printed ${new Date().toLocaleString('en-IN')} by ${currentUser.name} · Store: ${storeText} · Status: ${statusText}${searchText}`;
 }
@@ -417,6 +366,19 @@ function addToCart(storeId, sku) {
   hideErrors('cartErrors');
   render();
   toast(`Added ${findProduct(state, sku).name} (cart has ${wanted}).`);
+}
+
+// One click, no dialog: stop or resume selling an item at this shop.
+function onSetSelling(storeId, sku, selling) {
+  const name = findProduct(state, sku).name;
+  // A stopped item cannot stay in the cart.
+  if (!selling) cart.delete(sku);
+  runWrite((s) => setSelling(s, currentUser, storeId, sku, selling), {
+    errorBox: 'cartErrors',
+    success: selling ? `${name} is on sale again at ${storeNameOf(storeId)}.` : `Stopped selling ${name} at ${storeNameOf(storeId)}. Find it under "Stopped selling".`,
+  });
+  // The row moved to the other list, so keep keyboard focus on the list button.
+  if (document.activeElement === document.body || !document.activeElement) $('stoppedBtn').focus();
 }
 
 function onCheckout() {
@@ -576,18 +538,55 @@ function onProductSubmit(event) {
 // Users and theme
 // ---------------------------------------------------------------------------
 
-function signIn(userId) {
-  currentUser = state.users.find((u) => u.id === userId) || null;
+// Shop sign-in with an invite code from head office.
+function onSignInSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  form.classList.add('was-validated');
+  if (!form.checkValidity()) return;
+  refreshFromStorage(); // a code created a moment ago in the admin tab must work
+  const code = normalizeCode($('inviteCode').value);
+  const result = signInWithCode(state, code, new Date().toISOString());
+  if (!result.ok) {
+    showErrors('signInErrors', result.errors);
+    $('inviteCode').focus();
+    return;
+  }
+  const saved = store.save(result.state);
+  if (!saved.ok) {
+    showErrors('signInErrors', [saved.error]);
+    return;
+  }
+  state = result.state;
+  signedInCode = code;
+  currentUser = result.user;
   try {
-    if (currentUser) sessionStorage.setItem(USER_KEY, currentUser.id);
-    else sessionStorage.removeItem(USER_KEY);
+    sessionStorage.setItem(CODE_KEY, code);
   } catch {
-    // sessionStorage blocked: the user simply has to pick again after a refresh
+    // sessionStorage blocked: the shop has to sign in again after a refresh
+  }
+  form.reset();
+  form.classList.remove('was-validated');
+  hideErrors('signInErrors');
+  cart.clear();
+  resetFilters();
+  render();
+  toast(`Signed in as ${currentUser.name}.`);
+}
+
+function signOut(message) {
+  signedInCode = null;
+  currentUser = null;
+  try {
+    sessionStorage.removeItem(CODE_KEY);
+  } catch {
+    // nothing to remove
   }
   cart.clear();
   hideErrors('cartErrors');
-  resetFilters();
   render();
+  if (message) showErrors('signInErrors', [message]);
+  $('inviteCode').focus();
 }
 
 // Start each user on their own view: a manager sees their store, the buyer all stores.
@@ -598,49 +597,14 @@ function resetFilters() {
 }
 
 function restoreUser() {
-  let id = null;
   try {
-    id = sessionStorage.getItem(USER_KEY);
+    signedInCode = sessionStorage.getItem(CODE_KEY);
   } catch {
-    id = null;
+    signedInCode = null;
   }
-  currentUser = state.users.find((u) => u.id === id) || null;
+  currentUser = signedInCode ? userFromInvite(state, signedInCode) : null;
+  if (!currentUser) signedInCode = null;
   resetFilters();
-}
-
-function initTheme() {
-  const btn = $('themeToggle');
-  const root = document.documentElement;
-  // The label names the mode the button switches to.
-  const update = () => {
-    btn.textContent = root.getAttribute('data-bs-theme') === 'dark' ? 'Light mode' : 'Dark mode';
-  };
-  btn.addEventListener('click', () => {
-    const next = root.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
-    root.setAttribute('data-bs-theme', next);
-    try {
-      localStorage.setItem(THEME_KEY, next);
-    } catch {
-      // choice is not remembered, but the toggle still works
-    }
-    update();
-  });
-  // Follow OS changes only while the user has not picked a theme.
-  if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-      let saved = null;
-      try {
-        saved = localStorage.getItem(THEME_KEY);
-      } catch {
-        saved = null;
-      }
-      if (!saved) {
-        root.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
-        update();
-      }
-    });
-  }
-  update();
 }
 
 // ---------------------------------------------------------------------------
@@ -648,26 +612,14 @@ function initTheme() {
 // ---------------------------------------------------------------------------
 
 function bindEvents() {
-  $('signInList').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-user-id]');
-    if (btn) signIn(btn.dataset.userId);
-  });
-  $('userSwitch').addEventListener('change', (e) => signIn(e.target.value));
-  $('signOutBtn').addEventListener('click', () => signIn(null));
+  $('signInForm').addEventListener('submit', onSignInSubmit);
+  $('signOutBtn').addEventListener('click', () => signOut());
 
-  $('resetBtn').addEventListener('click', async () => {
-    if (!window.confirm('Reset all data to the sample? Every change in this browser will be lost.')) return;
-    try {
-      const { state: fresh, notice } = await store.reset();
-      state = fresh;
-      if (currentUser) currentUser = state.users.find((u) => u.id === currentUser.id) || null;
-      cart.clear();
-      render();
-      if (notice) showBanner(notice);
-      else toast('Sample data restored.');
-    } catch (err) {
-      toast(`Reset failed: ${err.message}`, 'danger');
-    }
+  // One click: list only the items this shop has stopped selling (or go back).
+  $('stoppedBtn').addEventListener('click', () => {
+    filters.status = filters.status === 'Stopped' ? 'all' : 'Stopped';
+    if (filters.status === 'Stopped') filters.storeId = currentUser.storeId;
+    render();
   });
 
   // Filters (R9)
@@ -683,7 +635,7 @@ function bindEvents() {
   });
   $('statusFilter').addEventListener('change', (e) => {
     filters.status = e.target.value;
-    renderTable();
+    render(); // also updates the Stopped selling button
   });
   $('clearFilters').addEventListener('click', () => {
     filters.query = '';
@@ -715,6 +667,8 @@ function bindEvents() {
     else if (action === 'receive') openReceive(storeId, sku);
     else if (action === 'transfer') openTransfer(storeId, sku);
     else if (action === 'reorder') openReorder(storeId, sku);
+    else if (action === 'stop') onSetSelling(storeId, sku, false);
+    else if (action === 'resume') onSetSelling(storeId, sku, true);
   });
 
   $('addProductBtn').addEventListener('click', () => openModal('productModal', 'productForm', 'productErrors', { id: 'addProductBtn' }));
@@ -778,7 +732,12 @@ async function start() {
   // R4: when another tab saves, take its data and redraw (no save here, so no loop).
   store.subscribe((fresh) => {
     state = fresh;
-    if (currentUser) currentUser = state.users.find((u) => u.id === currentUser.id) || null;
+    const wasSignedIn = Boolean(currentUser);
+    currentUser = signedInCode ? userFromInvite(state, signedInCode) : null;
+    if (wasSignedIn && !currentUser) {
+      signOut('Your invite code is no longer active. Ask head office for a new one.');
+      return;
+    }
     render();
   });
 

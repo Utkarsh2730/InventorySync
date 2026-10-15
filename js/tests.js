@@ -16,6 +16,13 @@ import {
   alertsOf,
   isValidState,
   defaultStoreFor,
+  setSelling,
+  createInvite,
+  revokeInvite,
+  signInWithCode,
+  userFromInvite,
+  normalizeCode,
+  addStore,
 } from './inventory.js';
 import { escapeCsvCell, rowsToCsv } from './export.js';
 
@@ -39,7 +46,9 @@ function makeState() {
       { id: 'mA', name: 'Manager A', role: 'manager', storeId: 'A' },
       { id: 'mB', name: 'Manager B', role: 'manager', storeId: 'B' },
       { id: 'buyer', name: 'Buyer', role: 'buyer', storeId: null },
+      { id: 'admin', name: 'Admin', role: 'admin', storeId: null },
     ],
+    invites: [],
     log: [],
   };
 }
@@ -229,13 +238,94 @@ export function runTests() {
     return csv.charCodeAt(0) === 0xfeff && lines[0].includes('₹') && lines.length === rows.length + 1;
   });
 
+  // --- Stop / resume selling (one click) ---------------------------------
+  check('Stop selling: a shop stops an item at its own store only', () => {
+    const s = makeState();
+    const own = setSelling(s, user(s, 'mA'), 'A', 'DAL', false);
+    const other = setSelling(s, user(s, 'mA'), 'B', 'DAL', false);
+    const buyer = setSelling(s, user(s, 'buyer'), 'A', 'DAL', false);
+    return own.ok && own.state.stock.A.DAL.stopped === true && !other.ok && !buyer.ok && !s.stock.A.DAL.stopped;
+  });
+  check('Stop selling: the item cannot be sold, leaves alerts and counts, and is listed under Stopped', () => {
+    const s = makeState();
+    const r = setSelling(s, user(s, 'mA'), 'A', 'DAL', false).state; // DAL at A was Low
+    const sale = checkout(r, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 1 }]);
+    const rows = buildRows(r);
+    return !sale.ok && sale.errors[0].includes('stopped selling')
+      && summarize(r, 'A').low === 0 && summarize(r, 'A').stopped === 1
+      && alertsOf(r, 'A').every((a) => a.sku !== 'DAL')
+      && filterRows(rows, { storeId: 'A' }).every((x) => x.sku !== 'DAL')
+      && filterRows(rows, { storeId: 'A', status: 'Stopped' }).map((x) => x.sku).join() === 'DAL';
+  });
+  check('Resume selling brings the item back; stopping twice is refused', () => {
+    const s = makeState();
+    const m = user(s, 'mA');
+    const stopped = setSelling(s, m, 'A', 'DAL', false).state;
+    const twice = setSelling(stopped, m, 'A', 'DAL', false);
+    const resumed = setSelling(stopped, m, 'A', 'DAL', true);
+    return !twice.ok && resumed.ok && !resumed.state.stock.A.DAL.stopped && buildRows(resumed.state)[0].status === 'Low';
+  });
+  check('A shop manager can now add products', () => {
+    const s = makeState();
+    return addProduct(s, user(s, 'mA'), { sku: 'TEA-1', name: 'Tea', price: 10, reorderLevel: 1 }).ok;
+  });
+
+  // --- Invite codes and shops (admin) -------------------------------------
+  const CODE = 'ABCD-EFGH-JKLM';
+  const NOW = '2026-10-16T10:00:00.000Z';
+  check('Invites: only the admin can create codes; a shop code signs in as that shop', () => {
+    const s = makeState();
+    const refused = createInvite(s, user(s, 'buyer'), { code: CODE, storeId: 'A', label: 'Shop A', now: NOW });
+    const made = createInvite(s, user(s, 'admin'), { code: CODE, storeId: 'A', label: 'Shop A', now: NOW });
+    const signed = signInWithCode(made.state, 'abcd efgh jklm', NOW);
+    return !refused.ok && made.ok && signed.ok && signed.user.role === 'manager' && signed.user.storeId === 'A'
+      && signed.state.invites[0].lastUsedAt === NOW && s.invites.length === 0;
+  });
+  check('Invites: a head-office code signs in as the buyer for all shops', () => {
+    const s = makeState();
+    const made = createInvite(s, user(s, 'admin'), { code: CODE, storeId: 'all', label: 'Head office', now: NOW });
+    const u = userFromInvite(made.state, CODE);
+    return made.ok && u.role === 'buyer' && u.storeId === null && can(u, 'transfer', 'A');
+  });
+  check('Invites: duplicate, badly formed or shop-less codes are refused', () => {
+    const s = makeState();
+    const a = user(s, 'admin');
+    const first = createInvite(s, a, { code: CODE, storeId: 'A', label: 'Shop A', now: NOW });
+    return !createInvite(first.state, a, { code: CODE, storeId: 'B', label: 'Shop B', now: NOW }).ok
+      && !createInvite(s, a, { code: 'SHORT', storeId: 'A', label: 'Shop A', now: NOW }).ok
+      && !createInvite(s, a, { code: CODE, storeId: 'NOPE', label: 'Shop A', now: NOW }).ok
+      && !createInvite(s, a, { code: CODE, storeId: 'A', label: 'x', now: NOW }).ok;
+  });
+  check('Invites: a revoked or unknown code cannot sign in', () => {
+    const s = makeState();
+    const a = user(s, 'admin');
+    const made = createInvite(s, a, { code: CODE, storeId: 'A', label: 'Shop A', now: NOW }).state;
+    const revoked = revokeInvite(made, a, CODE).state;
+    return userFromInvite(revoked, CODE) === null && !signInWithCode(revoked, CODE, NOW).ok
+      && !signInWithCode(made, 'ZZZZ-ZZZZ-ZZZZ', NOW).ok && !revokeInvite(made, user(s, 'mA'), CODE).ok
+      && normalizeCode(' abcd-efgh-jklm ') === CODE;
+  });
+  check('Admin can add a shop; it starts with every product at 0; duplicates are refused', () => {
+    const s = makeState();
+    const r = addStore(s, user(s, 'admin'), { name: 'Whitefield', city: 'Bengaluru' });
+    return r.ok && r.storeId === 'whitefield' && r.state.stock.whitefield.DAL.qty === 0 && r.state.stock.whitefield.GHEE.qty === 0
+      && !addStore(r.state, user(s, 'admin'), { name: 'whitefield' }).ok
+      && !addStore(s, user(s, 'buyer'), { name: 'Other' }).ok
+      && isValidState(r.state);
+  });
+
   // --- Data shape --------------------------------------------------------
   check('Stored data with negative stock or a wrong version is rejected', () => {
     const neg = makeState();
     neg.stock.A.DAL.qty = -1;
     const old = makeState();
     old.version = 0;
-    return isValidState(makeState()) && !isValidState(neg) && !isValidState(old) && !isValidState(null);
+    const noInvites = makeState();
+    delete noInvites.invites; // saved before invite codes existed
+    const badInvites = makeState();
+    badInvites.invites = [{ code: 1 }];
+    return isValidState(makeState()) && !isValidState(neg) && !isValidState(old) && !isValidState(null)
+      && isValidState(noInvites) && !isValidState(badInvites);
   });
 
   return results;
@@ -243,12 +333,11 @@ export function runTests() {
 
 // Also check the shipped sample file, which needs fetch (so it is async).
 export async function checkSampleData(url = 'data/sample-data.json') {
-  const name = 'Sample data file is valid, has 3 stores, 3 users (2 managers, 1 buyer) and OK/Low/Out cases';
+  const name = 'Sample data file is valid, has 3 stores, no invite codes yet, and OK/Low/Out cases';
   try {
     const data = await (await fetch(url, { cache: 'no-store' })).json();
     const statuses = new Set(buildRows(data).map((r) => r.status));
-    const managers = data.users.filter((u) => u.role === 'manager').length;
-    const passed = isValidState(data) && data.stores.length === 3 && data.users.length === 3 && managers === 2
+    const passed = isValidState(data) && data.stores.length === 3 && Array.isArray(data.invites) && data.invites.length === 0
       && statuses.has('OK') && statuses.has('Low') && statuses.has('Out');
     return { name, passed, error: passed ? '' : 'sample data does not match' };
   } catch (err) {

@@ -13,11 +13,11 @@
 // `state` is the very same object that was passed in, untouched.
 
 export const DATA_VERSION = 1;
-export const STATUSES = ['OK', 'Low', 'Out'];
+export const STATUSES = ['OK', 'Low', 'Out', 'Stopped'];
 export const MAX_QTY = 100000; // upper bound for any single quantity or level
 export const LOG_LIMIT = 1000; // keep only the newest log entries
 
-export const ROLE_LABELS = { manager: 'Store Manager', buyer: 'Inventory Buyer' };
+export const ROLE_LABELS = { manager: 'Store Manager', buyer: 'Inventory Buyer', admin: 'Admin' };
 
 export const ACTION_LABELS = {
   sell: 'sell',
@@ -25,6 +25,9 @@ export const ACTION_LABELS = {
   transfer: 'transfer stock',
   setReorder: 'change reorder levels',
   addProduct: 'add products',
+  setSelling: 'change which items this shop sells',
+  manageInvites: 'manage invite codes',
+  addStore: 'add shops',
 };
 
 // ---------------------------------------------------------------------------
@@ -43,18 +46,24 @@ export function statusOf(qty, reorderLevel) {
 // ---------------------------------------------------------------------------
 
 // Permission matrix:
-//   Store Manager:   sell, receive (own store only)
-//   Inventory Buyer: receive (any store), transfer, setReorder, addProduct;
-//                    never sell
+//   Store Manager (a shop):  sell, receive, stop/resume selling (own store
+//                            only); add products to the chain catalogue
+//   Inventory Buyer (head office code): receive (any store), transfer,
+//                            setReorder, addProduct; never sell
+//   Admin:                   manage invite codes, add shops; no stock changes
 // Anything else, or a missing user, is refused.
 export function can(user, action, storeId) {
   if (!user) return false;
   if (user.role === 'manager') {
+    if (action === 'addProduct') return true;
     const ownStore = storeId === user.storeId;
-    return ownStore && (action === 'sell' || action === 'receive');
+    return ownStore && ['sell', 'receive', 'setSelling'].includes(action);
   }
   if (user.role === 'buyer') {
     return ['receive', 'transfer', 'setReorder', 'addProduct'].includes(action);
+  }
+  if (user.role === 'admin') {
+    return ['manageInvites', 'addStore'].includes(action);
   }
   return false;
 }
@@ -130,6 +139,10 @@ export function checkout(state, user, storeId, cart) {
     const qty = line && line.qty;
     if (!state.stock[storeId][sku]) {
       errors.push(`Unknown product "${sku}".`);
+      continue;
+    }
+    if (state.stock[storeId][sku].stopped) {
+      errors.push(`${productName(state, sku)}: ${storeName(state, storeId)} has stopped selling this item.`);
       continue;
     }
     if (!isPositiveInt(qty)) {
@@ -264,6 +277,144 @@ export function addProduct(state, user, input) {
 }
 
 // ---------------------------------------------------------------------------
+// Stop / resume selling an item in one shop (one click, no quantity change)
+// ---------------------------------------------------------------------------
+
+// selling = false marks the item as stopped at that shop: it leaves the
+// alerts and Low/Out counts and cannot be sold there. selling = true resumes it.
+export function setSelling(state, user, storeId, sku, selling) {
+  if (!can(user, 'setSelling', storeId)) return refuse(state, [refusalMessage(state, user, 'setSelling', storeId)]);
+
+  const errors = [];
+  if (!findStore(state, storeId)) errors.push(`Unknown store "${storeId}".`);
+  if (!findProduct(state, sku)) errors.push(`Unknown product "${sku}".`);
+  if (typeof selling !== 'boolean') errors.push('Choose whether to stop or resume selling.');
+  if (errors.length > 0) return refuse(state, errors);
+
+  const isStopped = Boolean(state.stock[storeId][sku].stopped);
+  if (isStopped === !selling) {
+    return refuse(state, [`${productName(state, sku)} is already ${selling ? 'on sale' : 'stopped'} at ${storeName(state, storeId)}.`]);
+  }
+
+  const next = clone(state);
+  if (selling) delete next.stock[storeId][sku].stopped;
+  else next.stock[storeId][sku].stopped = true;
+  addLog(next, [{ type: 'adjust', storeId, sku, change: 0, note: selling ? 'resumed selling' : 'stopped selling', userId: user.id }]);
+  return { ok: true, errors: [], state: next };
+}
+
+// ---------------------------------------------------------------------------
+// Shops and invite codes (admin)
+// ---------------------------------------------------------------------------
+
+// Codes look like ABCD-EFGH-JKLM. The admin page makes the random part;
+// this file only checks and stores codes, so it stays free of randomness.
+export const INVITE_PATTERN = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+
+// Accept codes typed in lower case, with spaces or without dashes.
+export function normalizeCode(code) {
+  const plain = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return plain.length === 12 ? `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}` : plain;
+}
+
+function invitesOf(state) {
+  return Array.isArray(state.invites) ? state.invites : [];
+}
+
+export function findInvite(state, code) {
+  const wanted = normalizeCode(code);
+  return invitesOf(state).find((i) => i.code === wanted) || null;
+}
+
+// input: { code, storeId ('all' for a head-office code), label, now (ISO time) }
+export function createInvite(state, actor, input) {
+  if (!can(actor, 'manageInvites', null)) return refuse(state, [refusalMessage(state, actor, 'manageInvites', null)]);
+
+  const code = normalizeCode(input && input.code);
+  const storeId = input && input.storeId;
+  const label = String((input && input.label) || '').trim();
+
+  const errors = [];
+  if (!INVITE_PATTERN.test(code)) errors.push('The invite code has the wrong format.');
+  else if (findInvite(state, code)) errors.push('That invite code already exists. Generate a new one.');
+  if (storeId !== 'all' && !findStore(state, storeId)) errors.push('Choose the shop this code is for.');
+  if (label.length < 2 || label.length > 60) errors.push('Give the code a name of 2–60 characters, for example "Indiranagar counter".');
+  if (errors.length > 0) return refuse(state, errors);
+
+  const next = clone(state);
+  next.invites = invitesOf(next);
+  next.invites.push({
+    code,
+    role: storeId === 'all' ? 'buyer' : 'manager',
+    storeId: storeId === 'all' ? null : storeId,
+    label,
+    createdAt: (input && input.now) || new Date().toISOString(),
+    lastUsedAt: null,
+    revoked: false,
+  });
+  return { ok: true, errors: [], state: next };
+}
+
+export function revokeInvite(state, actor, code) {
+  if (!can(actor, 'manageInvites', null)) return refuse(state, [refusalMessage(state, actor, 'manageInvites', null)]);
+  const invite = findInvite(state, code);
+  if (!invite) return refuse(state, ['Unknown invite code.']);
+  if (invite.revoked) return refuse(state, ['That invite code is already revoked.']);
+
+  const next = clone(state);
+  next.invites.find((i) => i.code === invite.code).revoked = true;
+  return { ok: true, errors: [], state: next };
+}
+
+// The signed-in "user" for a shop is its invite code. Revoked or unknown
+// codes give null, which signs the shop out.
+export function userFromInvite(state, code) {
+  const invite = findInvite(state, code);
+  if (!invite || invite.revoked) return null;
+  if (invite.role === 'manager' && !findStore(state, invite.storeId)) return null;
+  return { id: `invite:${invite.code}`, name: invite.label, role: invite.role, storeId: invite.storeId };
+}
+
+// Signing in is the one write that has no signed-in user yet: the valid,
+// unrevoked code itself is the permission. It records when the code was used.
+export function signInWithCode(state, code, now) {
+  const user = userFromInvite(state, code);
+  if (!user) {
+    const invite = findInvite(state, code);
+    const reason = invite && invite.revoked
+      ? 'This invite code has been revoked. Ask head office for a new one.'
+      : 'That invite code is not valid. Check it and try again.';
+    return { ok: false, errors: [reason], state, user: null };
+  }
+  const next = clone(state);
+  next.invites.find((i) => i.code === normalizeCode(code)).lastUsedAt = now || new Date().toISOString();
+  return { ok: true, errors: [], state: next, user };
+}
+
+// input: { name, city }. The new shop starts with every product at 0.
+export function addStore(state, actor, input) {
+  if (!can(actor, 'addStore', null)) return refuse(state, [refusalMessage(state, actor, 'addStore', null)]);
+
+  const name = String((input && input.name) || '').trim();
+  const city = String((input && input.city) || '').trim();
+  const errors = [];
+  if (name.length < 2 || name.length > 40) errors.push('Shop name must be 2–40 characters.');
+  else if (state.stores.some((st) => st.name.toLowerCase() === name.toLowerCase())) errors.push(`A shop called "${name}" already exists.`);
+  if (city.length > 40) errors.push('City must be at most 40 characters.');
+  if (errors.length > 0) return refuse(state, errors);
+
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'shop';
+  let id = base;
+  for (let n = 2; findStore(state, id); n += 1) id = `${base}-${n}`;
+
+  const next = clone(state);
+  next.stores.push({ id, name, city });
+  next.stock[id] = {};
+  for (const p of next.products) next.stock[id][p.sku] = { qty: 0, reorderLevel: 5 };
+  return { ok: true, errors: [], state: next, storeId: id };
+}
+
+// ---------------------------------------------------------------------------
 // Read-only views used by the UI, CSV export and tests
 // ---------------------------------------------------------------------------
 
@@ -276,7 +427,7 @@ export function buildRows(state) {
   const rows = [];
   for (const s of state.stores) {
     for (const p of state.products) {
-      const { qty, reorderLevel } = state.stock[s.id][p.sku];
+      const { qty, reorderLevel, stopped } = state.stock[s.id][p.sku];
       rows.push({
         storeId: s.id,
         storeName: s.name,
@@ -285,7 +436,8 @@ export function buildRows(state) {
         price: p.price,
         qty,
         reorderLevel,
-        status: statusOf(qty, reorderLevel),
+        stopped: Boolean(stopped),
+        status: stopped ? 'Stopped' : statusOf(qty, reorderLevel),
         value: qty * p.price,
         chainTotal: chainTotals[p.sku],
       });
@@ -295,13 +447,16 @@ export function buildRows(state) {
 }
 
 // R9: search by name or SKU, filter by store and by status.
-// filters: { query: string, storeId: 'all' | id, status: 'all' | 'OK' | 'Low' | 'Out' }
+// filters: { query: string, storeId: 'all' | id, status: 'all' | 'OK' | 'Low' | 'Out' | 'Stopped' }
+// 'all' means every item the shop still sells; 'Stopped' lists only the
+// items it has stopped selling.
 export function filterRows(rows, filters = {}) {
   const query = String(filters.query || '').trim().toLowerCase();
   const storeId = filters.storeId || 'all';
   const status = filters.status || 'all';
   return rows.filter((r) => {
     if (storeId !== 'all' && r.storeId !== storeId) return false;
+    if (status === 'all' && r.status === 'Stopped') return false;
     if (status !== 'all' && r.status !== status) return false;
     if (query && !r.name.toLowerCase().includes(query) && !r.sku.toLowerCase().includes(query)) return false;
     return true;
@@ -321,6 +476,7 @@ export function summarize(state, storeId = 'all') {
     totalSkus: state.products.length,
     low: rows.filter((r) => r.status === 'Low').length,
     out: rows.filter((r) => r.status === 'Out').length,
+    stopped: rows.filter((r) => r.status === 'Stopped').length,
     stockValue: rows.reduce((sum, r) => sum + r.value, 0),
   };
 }
@@ -328,7 +484,7 @@ export function summarize(state, storeId = 'all') {
 // R5: every item needing action in one store (or every store), Out first, then Low.
 export function alertsOf(state, storeId = 'all') {
   return rowsForStore(state, storeId)
-    .filter((r) => r.status !== 'OK')
+    .filter((r) => r.status === 'Low' || r.status === 'Out')
     .sort((a, b) => (a.status === b.status ? 0 : a.status === 'Out' ? -1 : 1));
 }
 
@@ -356,6 +512,13 @@ export function isValidState(s) {
   }
   for (const u of s.users) {
     if (!u || typeof u.id !== 'string' || typeof u.name !== 'string' || !ROLE_LABELS[u.role]) return false;
+  }
+  // Invite codes were added later, so older saved data may not have them.
+  if (s.invites !== undefined) {
+    if (!Array.isArray(s.invites)) return false;
+    for (const i of s.invites) {
+      if (!i || typeof i.code !== 'string' || typeof i.label !== 'string' || !ROLE_LABELS[i.role]) return false;
+    }
   }
   return true;
 }

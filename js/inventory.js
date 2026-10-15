@@ -384,6 +384,16 @@ export function revokeInvite(state, actor, code) {
   return { ok: true, errors: [], state: next };
 }
 
+// Forgotten admin passcode: the admin page can only start over by revoking
+// every invite code (there is no server to prove who is asking). Like
+// signInWithCode this has no signed-in user; it can only ever take access
+// away, never give it. Stock, shops and products are kept.
+export function revokeAllInvites(state) {
+  const next = clone(state);
+  next.invites = invitesOf(next).map((i) => ({ ...i, revoked: true }));
+  return { ok: true, errors: [], state: next, revoked: invitesOf(state).filter((i) => !i.revoked).length };
+}
+
 // The signed-in "user" for a shop is its invite code. Revoked or unknown
 // codes give null, which signs the shop out.
 export function userFromInvite(state, code) {

@@ -40,6 +40,14 @@
   font-size: 0.95rem;
 }
 
+/* Admin page: forgotten-passcode panel. */
+.forgot-panel {
+  padding: 0.75rem;
+  border: 1px solid var(--bs-danger-border-subtle);
+  border-radius: var(--bs-border-radius);
+  background-color: var(--bs-danger-bg-subtle);
+}
+
 .invite-input {
   font-family: var(--bs-font-monospace);
   letter-spacing: 0.08em;

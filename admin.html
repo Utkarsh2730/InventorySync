@@ -57,6 +57,27 @@
                 </div>
                 <button id="adminLoginSubmit" type="submit" class="btn btn-dark w-100">Sign in</button>
               </form>
+
+              <!-- Forgotten passcode: start over. Only shown once a passcode exists. -->
+              <div id="forgotWrap" class="mt-3 d-none">
+                <button id="forgotToggle" type="button" class="btn btn-link btn-sm p-0" aria-expanded="false" aria-controls="forgotPanel">Forgot passcode?</button>
+                <div id="forgotPanel" class="forgot-panel mt-2 d-none">
+                  <p class="small mb-2">
+                    The passcode is stored only in this browser and cannot be recovered. You can set a new one,
+                    but to keep the shops safe <strong>every invite code will be revoked</strong>: shops are signed out
+                    and need new codes. Stock, shops and products are kept.
+                  </p>
+                  <form id="forgotForm" novalidate>
+                    <div id="forgotErrors" class="alert alert-danger d-none" role="alert"></div>
+                    <label for="forgotConfirm" class="form-label small">Type <strong>RESET</strong> to confirm</label>
+                    <div class="input-group">
+                      <input id="forgotConfirm" type="text" class="form-control" required pattern="RESET" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                      <button type="submit" class="btn btn-outline-danger">Revoke codes and set a new passcode</button>
+                    </div>
+                    <div class="form-text">Use this only if you are the admin of this browser's data.</div>
+                  </form>
+                </div>
+              </div>
             </div>
           </div>
         </div>

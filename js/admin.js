@@ -11,7 +11,7 @@
 //   anyone with access to this browser's developer tools can change stored
 //   data. Real accounts need the pilot's server-side sign-in (R11).
 
-import { createInvite, revokeInvite, addStore, summarize, findStore, findInvite } from './inventory.js';
+import { createInvite, revokeInvite, revokeAllInvites, addStore, summarize, findStore, findInvite } from './inventory.js';
 import * as store from './store.js';
 import { inr, $, h, showBanner, toast, showErrors, hideErrors, initTheme, formatTime } from './ui.js';
 
@@ -135,6 +135,11 @@ function renderLogin() {
     ? 'This is the first visit to the admin page in this browser. Choose a passcode of at least 8 characters and keep it safe: it cannot be recovered.'
     : 'Enter the admin passcode.';
   $('confirmWrap').classList.toggle('d-none', !setup);
+  $('forgotWrap').classList.toggle('d-none', setup);
+  if (setup) {
+    $('forgotPanel').classList.add('d-none');
+    $('forgotToggle').setAttribute('aria-expanded', 'false');
+  }
   $('adminPasscodeConfirm').required = setup;
   $('adminPasscode').autocomplete = setup ? 'new-password' : 'current-password';
   $('adminLoginSubmit').textContent = setup ? 'Save passcode and sign in' : 'Sign in';
@@ -232,6 +237,41 @@ async function onLoginSubmit(event) {
   render();
 }
 
+// Forgotten passcode: revoke every invite code, forget the passcode, and go
+// back to "Set up the admin passcode".
+function onForgotSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  form.classList.add('was-validated');
+  if ($('forgotConfirm').value.trim() !== 'RESET') {
+    $('forgotConfirm').setCustomValidity('Type RESET to confirm.');
+    return;
+  }
+  const latest = store.readLatest();
+  if (latest) state = latest;
+  const result = revokeAllInvites(state);
+  const saved = store.save(result.state);
+  if (!saved.ok) {
+    showErrors('forgotErrors', [saved.error]);
+    return;
+  }
+  state = result.state;
+  try {
+    localStorage.removeItem(AUTH_KEY);
+  } catch {
+    // nothing stored
+  }
+  writeSession(null);
+  form.reset();
+  form.classList.remove('was-validated');
+  hideErrors('forgotErrors');
+  hideErrors('adminLoginErrors');
+  signedIn = false;
+  render();
+  showBanner(`Passcode cleared and ${result.revoked} invite code${result.revoked === 1 ? '' : 's'} revoked. Set a new passcode, then create new codes for each shop.`, 'info');
+  $('adminPasscode').focus();
+}
+
 function signOut() {
   writeSession(null);
   signedIn = false;
@@ -312,6 +352,13 @@ async function onReset() {
 function bindEvents() {
   $('adminLoginForm').addEventListener('submit', onLoginSubmit);
   $('adminPasscodeConfirm').addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
+  $('forgotToggle').addEventListener('click', (e) => {
+    const open = $('forgotPanel').classList.toggle('d-none') === false;
+    e.currentTarget.setAttribute('aria-expanded', String(open));
+    if (open) $('forgotConfirm').focus();
+  });
+  $('forgotConfirm').addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
+  $('forgotForm').addEventListener('submit', onForgotSubmit);
   $('adminSignOut').addEventListener('click', signOut);
   $('addShopForm').addEventListener('submit', onAddShop);
   $('inviteForm').addEventListener('submit', onCreateInvite);

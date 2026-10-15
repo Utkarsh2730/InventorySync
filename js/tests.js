@@ -25,6 +25,7 @@ import {
   addStore,
   upgradeData,
   productLabel,
+  revokeAllInvites,
 } from './inventory.js';
 import { escapeCsvCell, rowsToCsv } from './export.js';
 
@@ -349,6 +350,15 @@ export function runTests() {
     return userFromInvite(revoked, CODE) === null && !signInWithCode(revoked, CODE, NOW).ok
       && !signInWithCode(made, 'ZZZZ-ZZZZ-ZZZZ', NOW).ok && !revokeInvite(made, user(s, 'mA'), CODE).ok
       && normalizeCode(' abcd-efgh-jklm ') === CODE;
+  });
+  check('Forgot passcode: revoking every code signs every shop out but keeps stock and shops', () => {
+    const s = makeState();
+    const a = user(s, 'admin');
+    const one = createInvite(s, a, { code: CODE, storeId: 'A', label: 'Shop A', now: NOW }).state;
+    const two = createInvite(one, a, { code: 'WXYZ-WXYZ-WXYZ', storeId: 'all', label: 'Head office', now: NOW }).state;
+    const r = revokeAllInvites(two);
+    return r.ok && r.revoked === 2 && userFromInvite(r.state, CODE) === null && userFromInvite(r.state, 'WXYZ-WXYZ-WXYZ') === null
+      && r.state.stock.A.DAL.qty === 3 && r.state.stores.length === 2 && two.invites.every((i) => !i.revoked);
   });
   check('Admin can add a shop; it starts with every product at 0; duplicates are refused', () => {
     const s = makeState();

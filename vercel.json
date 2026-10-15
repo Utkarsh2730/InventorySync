@@ -3,5 +3,17 @@
   "framework": null,
   "installCommand": "",
   "buildCommand": "",
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "redirects": [
+    {
+      "source": "/admin",
+      "destination": "/admin.html",
+      "permanent": false
+    },
+    {
+      "source": "/admin/",
+      "destination": "/admin.html",
+      "permanent": false
+    }
+  ]
 }

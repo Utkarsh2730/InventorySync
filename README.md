@@ -7,9 +7,9 @@ There are two separate pages, and neither shows the other's sign-in:
 | Page | Who | Signs in with |
 |------|-----|---------------|
 | **Shop page** `/` (`index.html`) | Each shop (Store Manager), or head office (Inventory Buyer) | An **invite code** created by the admin |
-| **Admin page** `/admin.html` | Head-office admin | An **admin passcode** set on the first visit |
+| **Admin page** `/admin` (also `/admin/` or `/admin.html`) | Head-office admin | An **admin passcode** set on the first visit |
 
-The shop page never mentions or links to the admin page; bookmark `/admin.html` yourself.
+The shop page never mentions or links to the admin page; bookmark `/admin` yourself.
 
 Two front ends share the same rules, storage and data:
 
@@ -116,9 +116,8 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 
 ### 1.5 First run: admin passcode and invite codes
 
-1. Open `/admin.html`. On the first visit in a browser it asks you to **set an admin passcode**
-   (at least 8 characters). Keep it safe: it cannot be recovered. To start over, clear this
-   site's data in the browser.
+1. Open `/admin` (or `/admin.html`). On the first visit in a browser it asks you to **set an
+   admin passcode** (at least 8 characters). The passcode belongs to that browser only.
 2. In **Create invite code**, choose a shop (or **Head office** for the buyer's all-shops view),
    give the code a name (e.g. "Indiranagar counter") and click **Generate code**. Copy it.
 3. Open `/` in another tab of the same browser and enter the code. Codes are not case sensitive
@@ -126,6 +125,19 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 4. A code keeps working until you **Revoke** it on the admin page; the shop is signed out at once.
 5. **Add shop** creates a new shop with every product at 0. Then create a code for it.
 6. **Reset data** (admin page only) restores the sample stock and deletes added shops and all codes.
+7. **Forgot passcode?** on the admin sign-in screen lets you set a new passcode after typing
+   `RESET`. Because there is no server to prove who is asking, it also **revokes every invite
+   code** (shops are signed out and need new codes). Stock, shops and products are kept.
+
+**Can't open the admin page?**
+
+| What you see | Fix |
+|--------------|-----|
+| 404 "Not Found" | Use `/admin`, `/admin/` or `/admin.html` (all three work). Check the spelling: it is lower case. |
+| "Set up the admin passcode" although you set one | You are in a different browser, profile or private window. The passcode, shops and codes live in the browser where you created them. |
+| "That passcode is not right" and you forgot it | Click **Forgot passcode?** (see step 7). |
+| "This browser cannot run the admin page securely here" | Open the site over `https://` or from `localhost`/`127.0.0.1`. A phone opening Live Server through a `http://192.168…` address is not a secure page, so the passcode cannot be protected. |
+| A blank page or "did not start" | Press Ctrl+Shift+R (Cmd+Shift+R on a Mac) to reload without the cache. |
 
 ---
 
@@ -134,7 +146,8 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 | File | Purpose |
 |------|---------|
 | `index.html` | Shop page: invite-code sign-in, 4 summary cards, stock table, alert panel, cart (offcanvas on phones), modals for Receive, Transfer, Reorder level and Add product. |
-| `admin.html` | Admin page: passcode sign-in, shops overview, Add shop, Create invite code, invite code list (Copy / Revoke), Reset data. |
+| `admin.html` | Admin page: passcode sign-in (with Forgot passcode?), shops overview, Add shop, Create invite code, invite code list (Copy / Revoke), Reset data. |
+| `admin/index.html` | Sends `/admin/` to `admin.html` on any host. `vercel.json` also redirects `/admin` and `/admin/`. |
 | `css/style.css` | Custom styles, focus outlines, scroll boxes, alignment, `@media print` stylesheet. Shared by both pages and the React build. |
 | `js/inventory.js` | Pure rules, no DOM: `statusOf`, `can`, `checkout`, `transfer`, `receive`, `setReorderLevel`, `addProduct`, `setSelling`, `createInvite`, `revokeInvite`, `signInWithCode`, `userFromInvite`, `addStore`, `filterRows`, plus read-only views. |
 | `js/store.js` | `load`, `save`, `reset`, `readLatest`, `subscribe` (BroadcastChannel and `storage` event). |

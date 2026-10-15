@@ -54,6 +54,75 @@
   overflow-y: auto;
 }
 
+/* --- The stock list scrolls inside its own box, not the whole page ------ */
+/* The column headings stay visible while the rows scroll under them. */
+.stock-scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain; /* reaching the end does not scroll the page */
+}
+
+.stock-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--bs-body-bg);
+  box-shadow: inset 0 -1px 0 var(--bs-border-color);
+}
+
+/* On laptops the list fills the space left under the navbar, cards and
+   filters, so the page itself does not need to scroll. */
+@media (min-width: 992px) {
+  .stock-scroll {
+    max-height: max(18rem, calc(100vh - 27rem));
+  }
+
+  /* Right-hand column (alerts + cart) fits the same height. The alert list
+     takes the spare space and scrolls; the cart keeps its own height and
+     scrolls only if it gets very long. */
+  .side-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: max(24rem, calc(100vh - 15.5rem));
+  }
+
+  .side-panel .alerts-card {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 9rem;
+  }
+
+  .side-panel .alert-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  /* The cart is a column too: only its item list shrinks and scrolls, so
+     the Total and Checkout button always stay in view. */
+  .side-panel .cart-wrap,
+  .side-panel .cart-wrap .offcanvas-lg,
+  .side-panel .cart-wrap .offcanvas-body,
+  .side-panel .cart-wrap .card,
+  .side-panel .cart-wrap .card-body {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+
+  .side-panel #cartLines {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .side-panel #cartLines:not(:empty) {
+    min-height: 5rem; /* always room for one whole item */
+  }
+}
+
 .cart-qty {
   width: 5.5rem;
 }
@@ -95,13 +164,21 @@
     width: 100% !important;
   }
 
-  .table-responsive {
+  .table-responsive,
+  .stock-scroll {
     overflow: visible !important;
+    max-height: none !important;
   }
 
-  .alert-list {
-    max-height: none;
-    overflow: visible;
+  .stock-scroll thead th {
+    position: static;
+  }
+
+  .alert-list,
+  .side-panel,
+  #cartLines {
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   .card {

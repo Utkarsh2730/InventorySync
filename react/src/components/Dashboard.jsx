@@ -120,7 +120,7 @@ function RowActions({ user, row, onAction }) {
 
 export function StockTable({ rows, user, onAction, showChainTotal }) {
   return (
-    <div className="table-responsive">
+    <div className="table-responsive stock-scroll" tabIndex={0} role="region" aria-label="Stock list (scrolls)">
       <table className="table table-sm table-hover align-middle mb-0">
         <caption className="visually-hidden">Stock per store and SKU</caption>
         <thead>
@@ -163,7 +163,7 @@ export function StockTable({ rows, user, onAction, showChainTotal }) {
 
 export function AlertPanel({ alerts, scopeName }) {
   return (
-    <section className="card mb-3" aria-labelledby="alertHeading">
+    <section className="card mb-3 alerts-card" aria-labelledby="alertHeading">
       <div className="card-header d-flex align-items-center justify-content-between">
         <h2 id="alertHeading" className="h5 mb-0">Alerts · {scopeName}</h2>
         <span className="badge text-bg-secondary">{alerts.length}</span>

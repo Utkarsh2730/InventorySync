@@ -142,7 +142,7 @@
                 </div>
               </form>
               <p id="rowCount" class="small text-body-secondary mb-2" aria-live="polite"></p>
-              <div class="table-responsive">
+              <div class="table-responsive stock-scroll" tabindex="0" role="region" aria-label="Stock list (scrolls)">
                 <table class="table table-sm table-hover align-middle mb-0">
                   <caption class="visually-hidden">Stock per store and SKU</caption>
                   <thead>
@@ -167,8 +167,8 @@
         </div>
 
         <!-- Alerts (R5) and cart -->
-        <div class="col-12 col-lg-4">
-          <section class="card mb-3" aria-labelledby="alertHeading">
+        <div class="col-12 col-lg-4 side-panel">
+          <section class="card mb-3 alerts-card" aria-labelledby="alertHeading">
             <div class="card-header d-flex align-items-center justify-content-between">
               <h2 id="alertHeading" class="h5 mb-0">Alerts · <span id="alertScope">All stores</span></h2>
               <span id="alertCount" class="badge text-bg-secondary">0</span>
@@ -177,7 +177,7 @@
           </section>
 
           <!-- On large screens this is a normal card; below lg it is an offcanvas panel. -->
-          <div id="cartWrap" class="no-print d-none">
+          <div id="cartWrap" class="no-print cart-wrap d-none">
             <div class="offcanvas-lg offcanvas-end" tabindex="-1" id="cartPanel" aria-labelledby="cartHeading">
               <div class="offcanvas-header">
                 <p class="offcanvas-title h5 mb-0" aria-hidden="true">Cart</p>

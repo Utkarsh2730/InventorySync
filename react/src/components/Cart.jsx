@@ -38,7 +38,7 @@ export function Cart({ state, storeId, storeName, cart, errors, open, onClose, o
   }
 
   return (
-    <div className="no-print">
+    <div className="no-print cart-wrap">
       <div className={`offcanvas-lg offcanvas-end${open ? ' show' : ''}`} tabIndex={-1} aria-labelledby="cartHeading"
         role={open ? 'dialog' : undefined} aria-modal={open ? 'true' : undefined}>
         <div className="offcanvas-header">

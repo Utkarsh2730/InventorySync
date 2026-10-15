@@ -11,7 +11,7 @@
 // compare the raw JSON text and skip a redraw when nothing changed. Listeners
 // only read and redraw; they never save, so there is no redraw loop.
 
-import { isValidState } from './inventory.js';
+import { isValidState, upgradeData } from './inventory.js';
 
 export const STORAGE_KEY = 'inventorysync:v1';
 const CHANNEL_NAME = 'inventorysync';
@@ -59,11 +59,12 @@ function readRaw() {
   }
 }
 
+// Parse saved JSON, upgrading data saved by an older version of the app.
 function parse(raw) {
   if (raw === null) return null;
   try {
-    const data = JSON.parse(raw);
-    return isValidState(data) ? data : null;
+    const data = upgradeData(JSON.parse(raw));
+    return data && isValidState(data) ? data : null;
   } catch {
     return null;
   }
@@ -90,6 +91,8 @@ export async function load() {
   const state = parse(raw);
   if (state) {
     lastRaw = raw;
+    // Saved by an older version: keep the upgraded data so every tab sees it.
+    if (JSON.stringify(state) !== raw) save(state);
     return { state, notice: null };
   }
 

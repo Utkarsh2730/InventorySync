@@ -22,6 +22,7 @@ import {
   userFromInvite,
   signInWithCode,
   normalizeCode,
+  productLabel,
 } from '../../js/inventory.js';
 import { downloadRowsAsCsv } from '../../js/export.js';
 import { useInventory } from './useInventory.js';
@@ -206,7 +207,7 @@ export default function App() {
     }
     const inStock = fresh.stock[storeId][sku].qty;
     const wanted = (isPositiveInt(cart[sku]) ? cart[sku] : 0) + 1;
-    const name = findProduct(fresh, sku).name;
+    const name = productLabel(findProduct(fresh, sku));
     if (wanted > inStock) {
       toast(`Only ${inStock} of ${name} in stock.`, 'danger');
       return;
@@ -232,7 +233,7 @@ export default function App() {
 
   // One click, no dialog: stop or resume selling an item at this shop.
   const onSetSelling = (storeId, sku, selling) => {
-    const name = findProduct(state, sku).name;
+    const name = productLabel(findProduct(state, sku));
     const result = runWrite((s) => setSelling(s, user, storeId, sku, selling),
       selling ? `${name} is on sale again at ${storeName(storeId)}.` : `Stopped selling ${name} at ${storeName(storeId)}. Find it under "Stopped selling".`);
     if (!result.ok) toast(result.errors[0], 'danger');
@@ -404,17 +405,17 @@ export default function App() {
       {user && dialog && dialog.type === 'receive' && (
         <ReceiveDialog state={state} storeId={dialog.storeId} sku={dialog.sku} onClose={closeDialog}
           onConfirm={({ qty }) => finish(runWrite((s) => receive(s, user, dialog.storeId, dialog.sku, qty),
-            `Received ${qty} × ${findProduct(state, dialog.sku).name} at ${storeName(dialog.storeId)}.`))} />
+            `Received ${qty} × ${productLabel(findProduct(state, dialog.sku))} at ${storeName(dialog.storeId)}.`))} />
       )}
       {user && dialog && dialog.type === 'transfer' && (
         <TransferDialog state={state} storeId={dialog.storeId} sku={dialog.sku} onClose={closeDialog}
           onConfirm={({ toId, qty }) => finish(runWrite((s) => transfer(s, user, dialog.storeId, toId, dialog.sku, qty),
-            `Moved ${qty} × ${findProduct(state, dialog.sku).name} from ${storeName(dialog.storeId)} to ${storeName(toId)}.`))} />
+            `Moved ${qty} × ${productLabel(findProduct(state, dialog.sku))} from ${storeName(dialog.storeId)} to ${storeName(toId)}.`))} />
       )}
       {user && dialog && dialog.type === 'reorder' && (
         <ReorderDialog state={state} storeId={dialog.storeId} sku={dialog.sku} onClose={closeDialog}
           onConfirm={({ level }) => finish(runWrite((s) => setReorderLevel(s, user, dialog.storeId, dialog.sku, level),
-            `Reorder level for ${findProduct(state, dialog.sku).name} at ${storeName(dialog.storeId)} is now ${level}.`))} />
+            `Reorder level for ${productLabel(findProduct(state, dialog.sku))} at ${storeName(dialog.storeId)} is now ${level}.`))} />
       )}
       {user && dialog && dialog.type === 'product' && (
         <ProductDialog onClose={closeDialog}

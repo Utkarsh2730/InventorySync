@@ -128,10 +128,10 @@
             <div class="card-body">
               <form id="filterForm" class="row g-2 mb-2 no-print" role="search" aria-label="Filter stock">
                 <div class="col-12 col-md-6">
-                  <label for="searchInput" class="form-label small mb-1">Search by name or SKU</label>
+                  <label for="searchInput" class="form-label small mb-1">Search by name, brand or SKU</label>
                   <div class="input-group">
                     <span class="input-group-text" aria-hidden="true">⌕</span>
-                    <input id="searchInput" type="search" class="form-control" placeholder="e.g. ghee or TOOR-1KG" autocomplete="off">
+                    <input id="searchInput" type="search" class="form-control" placeholder="e.g. ghee, Amul or TOOR-1KG" autocomplete="off">
                     <button id="clearFilters" type="button" class="btn btn-outline-secondary">Clear</button>
                   </div>
                 </div>
@@ -311,8 +311,16 @@
           </div>
           <div class="mb-3">
             <label for="productName" class="form-label">Name</label>
-            <input id="productName" type="text" class="form-control" required minlength="2" maxlength="80" autocomplete="off">
-            <div class="invalid-feedback">Enter a name of 2–80 characters.</div>
+            <input id="productName" type="text" class="form-control" required minlength="2" maxlength="80" autocomplete="off"
+                   placeholder="e.g. Toor Dal 1 kg" pattern="[A-Za-z0-9 .,'&quot;&amp;\(\)\/+%\-]+">
+            <div class="invalid-feedback">2–80 characters, in English letters only.</div>
+          </div>
+          <div class="mb-3">
+            <label for="productBrand" class="form-label">Brand</label>
+            <input id="productBrand" type="text" class="form-control" required minlength="2" maxlength="40" autocomplete="off"
+                   placeholder="e.g. Tata Sampann" pattern="[A-Za-z0-9 .,'&quot;&amp;\(\)\/+%\-]+">
+            <div class="invalid-feedback">2–40 characters, in English letters only.</div>
+            <div class="form-text">Stock the same item from another brand? Add it again with that brand and its own SKU.</div>
           </div>
           <div class="row g-3">
             <div class="col-6">

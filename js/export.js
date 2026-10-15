@@ -1,6 +1,6 @@
 // export.js: CSV export of the rows currently shown in the stock table (R10).
-// Hand-written CSV, no library. A UTF-8 BOM is added so Excel shows ₹ and
-// Indian-language product names correctly.
+// Hand-written CSV, no library. A UTF-8 BOM is added so Excel shows the
+// ₹ sign in the headers correctly.
 
 const BOM = '﻿';
 
@@ -8,6 +8,7 @@ export const CSV_HEADERS = [
   'Store',
   'SKU',
   'Product',
+  'Brand',
   'Price (₹)',
   'Qty',
   'Reorder level',
@@ -38,7 +39,7 @@ export function toCsv(headers, records) {
 export function rowsToCsv(rows, { includeChainTotal = true } = {}) {
   const headers = includeChainTotal ? CSV_HEADERS : CSV_HEADERS.slice(0, -1);
   const records = rows.map((r) => {
-    const cells = [r.storeName, r.sku, r.name, r.price, r.qty, r.reorderLevel, r.status, r.value];
+    const cells = [r.storeName, r.sku, r.name, r.brand, r.price, r.qty, r.reorderLevel, r.status, r.value];
     if (includeChainTotal) cells.push(r.chainTotal);
     return cells;
   });

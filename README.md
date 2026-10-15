@@ -143,7 +143,7 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 | `js/app.js` | Shop page: draws the screen and handles clicks. |
 | `js/admin.js` | Admin page: passcode (PBKDF2), random invite codes, shops and codes. |
 | `js/tests.js`, `tests.html` | Browser tests, no library. In-memory data only. |
-| `data/sample-data.json` | 3 shops, 14 products, stock; no users or invite codes (the admin creates codes). |
+| `data/sample-data.json` | 3 shops, 17 products (each with a brand; Toor Dal, Sunflower Oil and Assam Tea come from two brands), stock; no users or invite codes (the admin creates codes). |
 | `vendor/bootstrap/` | Bootstrap 5.3.8 CSS and JS bundle. |
 | `react/` | React + Vite source of the shop page: `src/App.jsx`, `src/useInventory.js` (wraps `store.js`), `src/components/`. |
 | `react-app/` | Built React site (output of `npm run build`). The admin page is the vanilla `admin.html` for both. |
@@ -157,7 +157,8 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
   "log": [ { "time", "type", "storeId", "sku", "change", "userId" } ] }
 ```
 
-A stock entry can also have `"stopped": true` when that shop has stopped selling the item.
+Each product is `{ sku, name, brand, price }` (data version 2). A stock entry can also have
+`"stopped": true` when that shop has stopped selling the item.
 
 Other keys: `inventorysync:theme` (localStorage, dark/light choice), `inventorysync:admin`
 (localStorage, the admin passcode's salt and PBKDF2 hash), `inventorysync:inviteCode` and
@@ -179,6 +180,15 @@ Other keys: `inventorysync:theme` (localStorage, dark/light choice), `inventorys
 convenience. Signing in with a code is the one write with no signed-in user yet: a valid,
 unrevoked code is itself the permission.
 
+### Brands and one language
+
+Every product has a **brand**. The same item from different brands (for example Toor Dal 1 kg
+from Tata Sampann and from 24 Mantra Organic) is a separate product with its own SKU, price and
+stock. The brand shows under the product name in the table and cart, in alerts, dialogs and the
+CSV, and Search matches it. Product names and brands are kept in **English only**: Add product
+refuses other scripts, and data saved by older versions is upgraded on load (version 1 → 2:
+brands added, non-English parts of names removed).
+
 ### Stopped selling
 
 Each row of a shop's own items has a one-click **Stop** button. A stopped item is greyed out,
@@ -196,7 +206,7 @@ the same browser.
 | # | Steps | Expected |
 |---|-------|----------|
 | 1 | Shop page: sign in with the **Koramangala** code. | The Store filter starts on Koramangala: table, summary (3 Low, 1 Out) and alerts show Koramangala only. Rows have Add to cart, Receive and Stop. There is no admin sign-in, user switcher or Reset button. |
-| 2 | **R1.** *Toor Dal 1 kg* has 3. Add it to the cart twice, then **Checkout**. | "Sale recorded". Qty is now 1, status Low. |
+| 2 | **R1.** *Toor Dal 1 kg* from **Tata Sampann** has 3. Add it to the cart twice, then **Checkout**. | "Sale recorded". Qty is now 1, status Low. The 24 Mantra Organic Toor Dal is a separate row and is not affected. |
 | 3 | Add Toor Dal once, change the cart quantity to **2**, **Checkout**. | Refused: "only 1 in stock … cannot sell 2". Qty stays 1. |
 | 4 | Put a valid line and an oversized line in the cart, **Checkout**. | Whole sale refused; neither quantity changes. |
 | 5 | **R2.** Sign in with the **Head office** code. With Store = **All stores**, look at *All stores total*. | Equals the sum of that SKU across the shops. The column is hidden when one shop is selected. |
@@ -209,8 +219,8 @@ the same browser.
 | 12 | **Revoke.** Admin page: **Revoke** the Koramangala code. | The Koramangala tab is signed out at once ("no longer active"); the code no longer signs in. |
 | 13 | **Add shop.** Admin page: add "Whitefield", create a code for it, sign in with it. | Whitefield appears in the shops table and on the shop page with every product at 0. |
 | 14 | **R7.** Refresh any tab. | Changes and sign-ins (per tab) are kept. Admin **Reset data** restores the sample and signs every shop out. |
-| 15 | **R9.** Type `ghee` in Search, then pick a Store and Status = Low. | Table narrows; "Showing N of M items" updates. |
-| 16 | **R10.** With filters on, click **Export CSV**. Open it in Excel. | Same rows as the screen; `₹`, `बासमती`, `ರಾಗಿ` display correctly; `Biscuits, Marie "Family Pack"` stays in one cell. |
+| 15 | **R9.** Type `toor` in Search (name), then `saffola` (brand), then pick a Store and Status = Low. | Table narrows; "Showing N of M items" updates. Each brand of an item is its own row. |
+| 16 | **R10.** With filters on, click **Export CSV**. Open it in Excel. | Same rows as the screen, with a Brand column; `₹` displays correctly; `Biscuits, Marie "Family Pack"` stays in one cell. |
 | 17 | **Print / PDF** → Save as PDF. | Clean report: no navbar, buttons, filters or cart; header shows date and filters. |
 | 18 | **R8.** DevTools device toolbar at **375 px**, then **1366 px**. | No sideways page scroll. On laptops the page fits the screen and the table, alerts and cart scroll inside their own boxes. |
 | 19 | Toggle **Dark mode**, refresh. | Choice is remembered on both pages. |

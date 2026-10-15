@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { findProduct, isPositiveInt } from '../../../js/inventory.js';
+import { findProduct, isPositiveInt, productLabel } from '../../../js/inventory.js';
 import { inr } from '../format.js';
 
 // While the phone panel is open: focus its close button, close on Escape,
@@ -69,7 +69,7 @@ export function Cart({ state, storeId, storeName, cart, errors, open, onClose, o
                   return (
                     <li key={sku} className="cart-line">
                       <div className="cart-line-top">
-                        <label htmlFor={inputId} className="cart-line-name">{p.name}</label>
+                        <label htmlFor={inputId} className="cart-line-name">{p.name}<span className="product-brand">{p.brand}</span></label>
                         <span className="cart-line-total">{isPositiveInt(qty) ? inr.format(p.price * qty) : '–'}</span>
                       </div>
                       <div className="cart-line-bottom">
@@ -81,7 +81,7 @@ export function Cart({ state, storeId, storeName, cart, errors, open, onClose, o
                           of {inStock} · {inr.format(p.price)} each
                         </span>
                         <button type="button" className="btn btn-sm btn-outline-danger cart-line-remove"
-                          aria-label={`Remove ${p.name} from cart`} onClick={() => onRemove(sku)}>Remove</button>
+                          aria-label={`Remove ${productLabel(p)} from cart`} onClick={() => onRemove(sku)}>Remove</button>
                       </div>
                     </li>
                   );

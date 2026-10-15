@@ -12,7 +12,7 @@
 // A refused or invalid call returns { ok: false, errors: [...], state } where
 // `state` is the very same object that was passed in, untouched.
 
-export const DATA_VERSION = 1;
+export const DATA_VERSION = 2; // 2: products have a brand; names are English only
 export const STATUSES = ['OK', 'Low', 'Out', 'Stopped'];
 export const MAX_QTY = 100000; // upper bound for any single quantity or level
 export const LOG_LIMIT = 1000; // keep only the newest log entries
@@ -93,9 +93,16 @@ function storeName(state, storeId) {
   return s ? s.name : String(storeId);
 }
 
+// "Toor Dal 1 kg (Tata Sampann)": the brand tells apart the same item
+// stocked from different brands. Used in every message and button label.
+export function productLabel(product) {
+  if (!product) return '';
+  return product.brand ? `${product.name} (${product.brand})` : product.name;
+}
+
 function productName(state, sku) {
   const p = findProduct(state, sku);
-  return p ? p.name : String(sku);
+  return p ? productLabel(p) : String(sku);
 }
 
 function clone(state) {
@@ -244,16 +251,21 @@ export function setReorderLevel(state, user, storeId, sku, level) {
 }
 
 // ---------------------------------------------------------------------------
-// Add a product (Buyer only). Starts at 0 in every store.
+// Add a product (shops and head office). Starts at 0 in every store.
 // ---------------------------------------------------------------------------
 
 export const SKU_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,23}$/;
+
+// Product names and brands are kept in one language (English) so the stock
+// list never mixes scripts: letters, digits, spaces and . , ' " & ( ) / + % -
+export const ENGLISH_TEXT = /^[A-Za-z0-9 .,'"&()/+%-]+$/;
 
 export function addProduct(state, user, input) {
   if (!can(user, 'addProduct', null)) return refuse(state, [refusalMessage(state, user, 'addProduct', null)]);
 
   const sku = String((input && input.sku) || '').trim().toUpperCase();
-  const name = String((input && input.name) || '').trim();
+  const name = String((input && input.name) || '').trim().replace(/\s+/g, ' ');
+  const brand = String((input && input.brand) || '').trim().replace(/\s+/g, ' ');
   const price = input && input.price;
   const reorderLevel = input && input.reorderLevel;
 
@@ -261,6 +273,12 @@ export function addProduct(state, user, input) {
   if (!SKU_PATTERN.test(sku)) errors.push('SKU must be 2–24 characters: letters, digits and dashes, starting with a letter or digit.');
   else if (findProduct(state, sku)) errors.push(`SKU "${sku}" already exists.`);
   if (name.length < 2 || name.length > 80) errors.push('Name must be 2–80 characters.');
+  else if (!ENGLISH_TEXT.test(name)) errors.push('Write the name in English letters only (no other scripts or symbols).');
+  if (brand.length < 2 || brand.length > 40) errors.push('Brand must be 2–40 characters.');
+  else if (!ENGLISH_TEXT.test(brand)) errors.push('Write the brand in English letters only (no other scripts or symbols).');
+  const same = state.products.find((p) => p.name.toLowerCase() === name.toLowerCase()
+    && String(p.brand || '').toLowerCase() === brand.toLowerCase());
+  if (same) errors.push(`${productLabel(same)} already exists as SKU ${same.sku}.`);
   if (typeof price !== 'number' || !Number.isFinite(price) || price < 0 || price > 10000000) {
     errors.push('Price must be a number from 0 to 1,00,00,000.');
   }
@@ -268,7 +286,7 @@ export function addProduct(state, user, input) {
   if (errors.length > 0) return refuse(state, errors);
 
   const next = clone(state);
-  next.products.push({ sku, name, price: Math.round(price * 100) / 100 });
+  next.products.push({ sku, name, brand, price: Math.round(price * 100) / 100 });
   for (const store of next.stores) {
     next.stock[store.id][sku] = { qty: 0, reorderLevel };
   }
@@ -433,6 +451,7 @@ export function buildRows(state) {
         storeName: s.name,
         sku: p.sku,
         name: p.name,
+        brand: p.brand || '',
         price: p.price,
         qty,
         reorderLevel,
@@ -447,7 +466,7 @@ export function buildRows(state) {
 }
 
 // R9: search by name or SKU, filter by store and by status.
-// filters: { query: string, storeId: 'all' | id, status: 'all' | 'OK' | 'Low' | 'Out' | 'Stopped' }
+// filters: { query: string (name, brand or SKU), storeId: 'all' | id, status: 'all' | 'OK' | 'Low' | 'Out' | 'Stopped' }
 // 'all' means every item the shop still sells; 'Stopped' lists only the
 // items it has stopped selling.
 export function filterRows(rows, filters = {}) {
@@ -458,7 +477,7 @@ export function filterRows(rows, filters = {}) {
     if (storeId !== 'all' && r.storeId !== storeId) return false;
     if (status === 'all' && r.status === 'Stopped') return false;
     if (status !== 'all' && r.status !== status) return false;
-    if (query && !r.name.toLowerCase().includes(query) && !r.sku.toLowerCase().includes(query)) return false;
+    if (query && ![r.name, r.brand, r.sku].some((text) => String(text).toLowerCase().includes(query))) return false;
     return true;
   });
 }
@@ -493,6 +512,56 @@ export function defaultStoreFor(user) {
   return user && user.role === 'manager' && user.storeId ? user.storeId : 'all';
 }
 
+// ---------------------------------------------------------------------------
+// Data upgrades (the `version` field exists for exactly this)
+// ---------------------------------------------------------------------------
+
+// Brands of the sample products, used when upgrading data saved before
+// products had brands. Any other product gets "Unbranded".
+const SAMPLE_BRANDS = {
+  'TOOR-1KG': 'Tata Sampann',
+  'ATTA-5KG': 'Aashirvaad',
+  'BASM-5KG': 'India Gate',
+  'SUNOIL-1L': 'Fortune',
+  'SUGAR-1KG': 'Madhur',
+  'SALT-1KG': 'Tata Salt',
+  'TEA-500G': 'Tata Tea Gold',
+  'MILK-500ML': 'Nandini',
+  'GHEE-500ML': 'Amul',
+  'BISC-MARIE': 'Britannia',
+  'SOAP-4PK': 'Mysore Sandal',
+  'DET-1KG': 'Surf Excel',
+  'RAGI-1KG': '24 Mantra Organic',
+  'COFFEE-200G': 'Cothas',
+};
+
+// Keep only the English part of a name: drop brackets that contain another
+// script, e.g. "Basmati Rice 5 kg (बासमती चावल)" -> "Basmati Rice 5 kg".
+export function englishOnly(text) {
+  const cleaned = String(text || '')
+    .replace(/\s*\([^)]*[^\x00-\x7F][^)]*\)/g, '')
+    .replace(/[^\x00-\x7F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned;
+}
+
+// Upgrade saved data to the current version. Returns the data unchanged if
+// it is already current, the upgraded copy, or null if it cannot be upgraded.
+export function upgradeData(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (data.version === DATA_VERSION) return data;
+  if (data.version !== 1 || !Array.isArray(data.products)) return null;
+  const next = clone(data);
+  next.version = 2;
+  next.products = next.products.map((p) => ({
+    ...p,
+    name: englishOnly(p.name) || p.sku,
+    brand: typeof p.brand === 'string' && p.brand ? englishOnly(p.brand) || 'Unbranded' : (SAMPLE_BRANDS[p.sku] || 'Unbranded'),
+  }));
+  return next;
+}
+
 // Shape check for data loaded from storage. Also rejects negative stock, so
 // a hand-edited saved value cannot sneak a negative quantity in.
 export function isValidState(s) {
@@ -506,6 +575,7 @@ export function isValidState(s) {
     if (!perStore || typeof perStore !== 'object') return false;
     for (const p of s.products) {
       if (!p || typeof p.sku !== 'string' || typeof p.name !== 'string' || typeof p.price !== 'number') return false;
+      if (typeof p.brand !== 'string') return false;
       const entry = perStore[p.sku];
       if (!entry || !isNonNegativeInt(entry.qty) || !isNonNegativeInt(entry.reorderLevel)) return false;
     }

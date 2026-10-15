@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { can } from '../../../js/inventory.js';
+import { can, productLabel } from '../../../js/inventory.js';
 import { BADGE_CLASS, inr } from '../format.js';
 
 export function StatusBadge({ status }) {
@@ -88,10 +88,10 @@ export function Filters({ stores, filters, onChange }) {
   return (
     <form className="row g-2 mb-2 no-print" role="search" aria-label="Filter stock" onSubmit={(e) => e.preventDefault()}>
       <div className="col-12 col-md-6">
-        <label htmlFor="searchInput" className="form-label small mb-1">Search by name or SKU</label>
+        <label htmlFor="searchInput" className="form-label small mb-1">Search by name, brand or SKU</label>
         <div className="input-group">
           <span className="input-group-text" aria-hidden="true">⌕</span>
-          <input id="searchInput" type="search" className="form-control" placeholder="e.g. ghee or TOOR-1KG"
+          <input id="searchInput" type="search" className="form-control" placeholder="e.g. ghee, Amul or TOOR-1KG"
             autoComplete="off" value={filters.query} onChange={set('query')} />
           <button type="button" className="btn btn-outline-secondary"
             onClick={() => onChange({ query: '', storeId: 'all', status: 'all' })}>Clear</button>
@@ -124,7 +124,7 @@ function RowActions({ user, row, onAction }) {
   // label is the short button text; fullLabel is read out by screen readers.
   const btn = (action, label, style, disabled = false, fullLabel = label) => (
     <button key={action} type="button" className={`btn ${style}`} disabled={disabled}
-      aria-label={`${fullLabel}: ${row.name} at ${row.storeName}`} onClick={() => onAction(action, row.storeId, row.sku)}>
+      aria-label={`${fullLabel}: ${productLabel(row)} at ${row.storeName}`} onClick={() => onAction(action, row.storeId, row.sku)}>
       {label}
     </button>
   );
@@ -140,7 +140,7 @@ function RowActions({ user, row, onAction }) {
   }
   if (buttons.length === 0) return <span className="text-body-secondary small">View only</span>;
   return (
-    <div className="btn-group btn-group-sm row-actions" role="group" aria-label={`Actions for ${row.name} at ${row.storeName}`}>
+    <div className="btn-group btn-group-sm row-actions" role="group" aria-label={`Actions for ${productLabel(row)} at ${row.storeName}`}>
       {buttons}
     </div>
   );
@@ -173,7 +173,10 @@ export function StockTable({ rows, user, onAction, showChainTotal, emptyText }) 
             <tr key={`${r.storeId}|${r.sku}`} className={r.stopped ? 'row-stopped' : undefined}>
               <td>{r.storeName}</td>
               <td><code>{r.sku}</code></td>
-              <td className="product-name">{r.name}</td>
+              <td className="product-name">
+                <div>{r.name}</div>
+                <div className="product-brand">{r.brand}</div>
+              </td>
               <td className="text-end d-none d-xl-table-cell print-cell">{inr.format(r.price)}</td>
               <td className="text-end qty-cell fw-semibold">{r.qty}</td>
               <td className="text-end qty-cell d-none d-xl-table-cell print-cell">{r.reorderLevel}</td>
@@ -205,7 +208,7 @@ export function AlertPanel({ alerts, scopeName }) {
             <StatusBadge status={a.status} />
             <div>
               <div className="fw-semibold">{a.name}</div>
-              <div className="small text-body-secondary">{a.storeName}: {a.qty} left (reorder at {a.reorderLevel})</div>
+              <div className="small text-body-secondary">{a.brand} · {a.storeName}: {a.qty} left (reorder at {a.reorderLevel})</div>
             </div>
           </li>
         ))}

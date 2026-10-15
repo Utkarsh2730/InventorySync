@@ -23,20 +23,22 @@ import {
   userFromInvite,
   normalizeCode,
   addStore,
+  upgradeData,
+  productLabel,
 } from './inventory.js';
 import { escapeCsvCell, rowsToCsv } from './export.js';
 
 // A small fixture: two stores, two products, two managers and a buyer.
 function makeState() {
   return {
-    version: 1,
+    version: 2,
     stores: [
       { id: 'A', name: 'Store A', city: 'Test' },
       { id: 'B', name: 'Store B', city: 'Test' },
     ],
     products: [
-      { sku: 'DAL', name: 'Toor Dal 1 kg', price: 165 },
-      { sku: 'GHEE', name: 'Ghee, "Pure" 500 ml', price: 340 },
+      { sku: 'DAL', name: 'Toor Dal 1 kg', brand: 'Tata Sampann', price: 165 },
+      { sku: 'GHEE', name: 'Ghee, "Pure" 500 ml', brand: 'Amul', price: 340 },
     ],
     stock: {
       A: { DAL: { qty: 3, reorderLevel: 5 }, GHEE: { qty: 0, reorderLevel: 2 } },
@@ -184,8 +186,8 @@ export function runTests() {
   check('Add product starts at 0 in every store and rejects duplicates', () => {
     const s = makeState();
     const b = user(s, 'buyer');
-    const r = addProduct(s, b, { sku: 'salt-1kg', name: 'Salt', price: 28, reorderLevel: 3 });
-    const dup = addProduct(r.state, b, { sku: 'SALT-1KG', name: 'Salt again', price: 28, reorderLevel: 3 });
+    const r = addProduct(s, b, { sku: 'salt-1kg', name: 'Salt', brand: 'Tata Salt', price: 28, reorderLevel: 3 });
+    const dup = addProduct(r.state, b, { sku: 'SALT-1KG', name: 'Salt again', brand: 'Tata Salt', price: 28, reorderLevel: 3 });
     return r.ok && r.state.stock.A['SALT-1KG'].qty === 0 && r.state.stock.B['SALT-1KG'].qty === 0 && !dup.ok;
   });
 
@@ -228,14 +230,57 @@ export function runTests() {
     const rows = filterRows(buildRows(makeState()), { storeId: 'A' });
     const one = rowsToCsv(rows, { includeChainTotal: false }).trim().split('\r\n');
     const all = rowsToCsv(rows).trim().split('\r\n');
-    return !one[0].includes('All stores total') && one[0].split(',').length === 8
-      && all[0].includes('All stores total') && all[0].split(',').length === 9;
+    return !one[0].includes('All stores total') && one[0].split(',').length === 9
+      && all[0].includes('All stores total') && all[0].split(',').length === 10
+      && one[0].includes('Brand') && one[1].includes('Tata Sampann');
   });
   check('R10: CSV starts with a UTF-8 BOM, has ₹ in the header and one line per row', () => {
     const rows = filterRows(buildRows(makeState()), { storeId: 'A' });
     const csv = rowsToCsv(rows);
     const lines = csv.trim().split('\r\n');
     return csv.charCodeAt(0) === 0xfeff && lines[0].includes('₹') && lines.length === rows.length + 1;
+  });
+
+  // --- Brands and English-only names ------------------------------------
+  check('Brands: the same item from another brand is a separate product', () => {
+    const s = makeState();
+    const r = addProduct(s, user(s, 'buyer'), { sku: 'DAL-24M', name: 'Toor Dal 1 kg', brand: '24 Mantra Organic', price: 189, reorderLevel: 2 });
+    const rows = buildRows(r.state).filter((x) => x.storeId === 'A' && x.name === 'Toor Dal 1 kg');
+    return r.ok && rows.length === 2 && rows.map((x) => x.brand).sort().join('|') === '24 Mantra Organic|Tata Sampann';
+  });
+  check('Brands: a product needs a brand, and the same name and brand cannot be added twice', () => {
+    const s = makeState();
+    const b = user(s, 'buyer');
+    return !addProduct(s, b, { sku: 'DAL-X', name: 'Toor Dal 1 kg', brand: '', price: 1, reorderLevel: 1 }).ok
+      && !addProduct(s, b, { sku: 'DAL-X', name: 'toor dal 1 KG', brand: 'TATA SAMPANN', price: 1, reorderLevel: 1 }).ok;
+  });
+  check('English only: names and brands in another script are refused', () => {
+    const s = makeState();
+    const b = user(s, 'buyer');
+    return !addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice (बासमती)', brand: 'India Gate', price: 1, reorderLevel: 1 }).ok
+      && !addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice', brand: 'ಇಂಡಿಯಾ', price: 1, reorderLevel: 1 }).ok
+      && addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice 5 kg (Extra Long)', brand: "Daawat & Co.", price: 1, reorderLevel: 1 }).ok;
+  });
+  check('Search matches the brand too, and messages name the brand', () => {
+    const rows = buildRows(makeState());
+    const s = makeState();
+    const refused = checkout(s, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 9 }]);
+    return filterRows(rows, { query: 'amul' }).every((r) => r.sku === 'GHEE') && filterRows(rows, { query: 'amul' }).length === 2
+      && refused.errors[0].startsWith('Toor Dal 1 kg (Tata Sampann)') && productLabel({ name: 'X', brand: '' }) === 'X';
+  });
+  check('Upgrade: data saved before brands gets brands and English-only names', () => {
+    const old = makeState();
+    old.version = 1;
+    old.products = [
+      { sku: 'BASM-5KG', name: 'Basmati Rice 5 kg (बासमती चावल)', price: 699 },
+      { sku: 'MY-OWN', name: 'Soap (4-pack)', price: 50 },
+    ];
+    old.stock = { A: { 'BASM-5KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 2, reorderLevel: 1 } }, B: { 'BASM-5KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 2, reorderLevel: 1 } } };
+    const up = upgradeData(old);
+    return up.version === 2 && isValidState(up) && old.version === 1
+      && up.products[0].name === 'Basmati Rice 5 kg' && up.products[0].brand === 'India Gate'
+      && up.products[1].name === 'Soap (4-pack)' && up.products[1].brand === 'Unbranded'
+      && up.stock.A['MY-OWN'].qty === 2 && upgradeData({ version: 99 }) === null;
   });
 
   // --- Stop / resume selling (one click) ---------------------------------
@@ -267,7 +312,7 @@ export function runTests() {
   });
   check('A shop manager can now add products', () => {
     const s = makeState();
-    return addProduct(s, user(s, 'mA'), { sku: 'TEA-1', name: 'Tea', price: 10, reorderLevel: 1 }).ok;
+    return addProduct(s, user(s, 'mA'), { sku: 'TEA-1', name: 'Tea', brand: 'Red Label', price: 10, reorderLevel: 1 }).ok;
   });
 
   // --- Invite codes and shops (admin) -------------------------------------
@@ -319,7 +364,7 @@ export function runTests() {
     const neg = makeState();
     neg.stock.A.DAL.qty = -1;
     const old = makeState();
-    old.version = 0;
+    old.version = 1; // must be upgraded first
     const noInvites = makeState();
     delete noInvites.invites; // saved before invite codes existed
     const badInvites = makeState();
@@ -333,12 +378,14 @@ export function runTests() {
 
 // Also check the shipped sample file, which needs fetch (so it is async).
 export async function checkSampleData(url = 'data/sample-data.json') {
-  const name = 'Sample data file is valid, has 3 stores, no invite codes yet, and OK/Low/Out cases';
+  const name = 'Sample data file is valid, English only, every product has a brand, one item comes from two brands, OK/Low/Out cases';
   try {
     const data = await (await fetch(url, { cache: 'no-store' })).json();
     const statuses = new Set(buildRows(data).map((r) => r.status));
+    const englishOnly = data.products.every((p) => /^[\x20-\x7E]+$/.test(p.name) && /^[\x20-\x7E]+$/.test(p.brand));
+    const twoBrands = data.products.some((p) => data.products.some((q) => q !== p && q.name === p.name && q.brand !== p.brand));
     const passed = isValidState(data) && data.stores.length === 3 && Array.isArray(data.invites) && data.invites.length === 0
-      && statuses.has('OK') && statuses.has('Low') && statuses.has('Out');
+      && englishOnly && twoBrands && statuses.has('OK') && statuses.has('Low') && statuses.has('Out');
     return { name, passed, error: passed ? '' : 'sample data does not match' };
   } catch (err) {
     return { name, passed: false, error: err.message };

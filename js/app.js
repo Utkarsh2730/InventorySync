@@ -23,6 +23,7 @@ import {
   userFromInvite,
   signInWithCode,
   normalizeCode,
+  productLabel,
 } from './inventory.js';
 import * as store from './store.js';
 import { downloadRowsAsCsv } from './export.js';
@@ -207,7 +208,7 @@ function actionButton(action, label, row, style, disabled = false, fullLabel = l
     'data-action': action,
     'data-store': row.storeId,
     'data-sku': row.sku,
-    'aria-label': `${fullLabel}: ${row.name} at ${row.storeName}`,
+    'aria-label': `${fullLabel}: ${productLabel(row)} at ${row.storeName}`,
     disabled,
   }, label);
 }
@@ -227,7 +228,10 @@ function rowElement(r) {
   return h('tr', { class: r.stopped ? 'row-stopped' : null },
     h('td', {}, r.storeName),
     h('td', {}, h('code', {}, r.sku)),
-    h('td', { class: 'product-name' }, r.name),
+    // Product name with its brand underneath (the same item can come from several brands).
+    h('td', { class: 'product-name' },
+      h('div', {}, r.name),
+      h('div', { class: 'product-brand' }, r.brand)),
     h('td', { class: 'text-end d-none d-xl-table-cell print-cell' }, inr.format(r.price)),
     h('td', { class: 'text-end qty-cell fw-semibold' }, r.qty),
     h('td', { class: 'text-end qty-cell d-none d-xl-table-cell print-cell' }, r.reorderLevel),
@@ -235,7 +239,7 @@ function rowElement(r) {
     h('td', { class: `text-end qty-cell chain-total-cell${showChainTotal() ? '' : ' d-none'}` }, r.chainTotal),
     h('td', { class: 'text-end d-none d-xl-table-cell print-cell' }, inr.format(r.value)),
     h('td', { class: 'actions-cell no-print' }, actions.length
-      ? h('div', { class: 'btn-group btn-group-sm row-actions', role: 'group', 'aria-label': `Actions for ${r.name} at ${r.storeName}` }, actions)
+      ? h('div', { class: 'btn-group btn-group-sm row-actions', role: 'group', 'aria-label': `Actions for ${productLabel(r)} at ${r.storeName}` }, actions)
       : h('span', { class: 'text-body-secondary small' }, 'View only')));
 }
 
@@ -275,7 +279,7 @@ function renderAlerts() {
     statusBadge(a.status),
     h('div', {},
       h('div', { class: 'fw-semibold' }, a.name),
-      h('div', { class: 'small text-body-secondary' }, `${a.storeName}: ${a.qty} left (reorder at ${a.reorderLevel})`)))));
+      h('div', { class: 'small text-body-secondary' }, `${a.brand} · ${a.storeName}: ${a.qty} left (reorder at ${a.reorderLevel})`)))));
 }
 
 function renderCart() {
@@ -293,7 +297,7 @@ function renderCart() {
     const inputId = `cartQty-${sku}`;
     return h('li', { class: 'cart-line' },
       h('div', { class: 'cart-line-top' },
-        h('label', { for: inputId, class: 'cart-line-name' }, p.name),
+        h('label', { for: inputId, class: 'cart-line-name' }, p.name, h('span', { class: 'product-brand' }, p.brand)),
         h('span', { class: 'cart-line-total', 'data-line-total': sku }, lineTotalText(p, qty))),
       h('div', { class: 'cart-line-bottom' },
         h('input', {
@@ -313,7 +317,7 @@ function renderCart() {
           type: 'button',
           class: 'btn btn-sm btn-outline-danger cart-line-remove',
           'data-remove': sku,
-          'aria-label': `Remove ${p.name} from cart`,
+          'aria-label': `Remove ${productLabel(p)} from cart`,
         }, 'Remove')));
   });
 
@@ -358,19 +362,19 @@ function addToCart(storeId, sku) {
   const inStock = state.stock[storeId][sku].qty;
   const wanted = (isPositiveInt(cart.get(sku)) ? cart.get(sku) : 0) + 1;
   if (wanted > inStock) {
-    toast(`Only ${inStock} of ${findProduct(state, sku).name} in stock.`, 'danger');
+    toast(`Only ${inStock} of ${productLabel(findProduct(state, sku))} in stock.`, 'danger');
     render();
     return;
   }
   cart.set(sku, wanted);
   hideErrors('cartErrors');
   render();
-  toast(`Added ${findProduct(state, sku).name} (cart has ${wanted}).`);
+  toast(`Added ${productLabel(findProduct(state, sku))} (cart has ${wanted}).`);
 }
 
 // One click, no dialog: stop or resume selling an item at this shop.
 function onSetSelling(storeId, sku, selling) {
-  const name = findProduct(state, sku).name;
+  const name = productLabel(findProduct(state, sku));
   // A stopped item cannot stay in the cart.
   if (!selling) cart.delete(sku);
   runWrite((s) => setSelling(s, currentUser, storeId, sku, selling), {
@@ -445,7 +449,7 @@ function closeModal(modalId) {
 function describe(storeId, sku) {
   const p = findProduct(state, sku);
   const entry = state.stock[storeId][sku];
-  return `${p.name} (${sku}) at ${storeNameOf(storeId)}: ${entry.qty} in stock, reorder at ${entry.reorderLevel}.`;
+  return `${productLabel(p)}, SKU ${sku}, at ${storeNameOf(storeId)}: ${entry.qty} in stock, reorder at ${entry.reorderLevel}.`;
 }
 
 function openReceive(storeId, sku) {
@@ -488,7 +492,7 @@ function onReceiveSubmit(event) {
   const qty = Number($('receiveQty').value);
   const ok = runWrite((s) => receive(s, currentUser, storeId, sku, qty), {
     errorBox: 'receiveErrors',
-    success: `Received ${qty} × ${findProduct(state, sku).name} at ${storeNameOf(storeId)}.`,
+    success: `Received ${qty} × ${productLabel(findProduct(state, sku))} at ${storeNameOf(storeId)}.`,
   });
   if (ok) closeModal('receiveModal');
 }
@@ -501,7 +505,7 @@ function onTransferSubmit(event) {
   const qty = Number($('transferQty').value);
   const ok = runWrite((s) => transfer(s, currentUser, fromId, toId, sku, qty), {
     errorBox: 'transferErrors',
-    success: `Moved ${qty} × ${findProduct(state, sku).name} from ${storeNameOf(fromId)} to ${storeNameOf(toId)}.`,
+    success: `Moved ${qty} × ${productLabel(findProduct(state, sku))} from ${storeNameOf(fromId)} to ${storeNameOf(toId)}.`,
   });
   if (ok) closeModal('transferModal');
 }
@@ -513,7 +517,7 @@ function onReorderSubmit(event) {
   const level = Number($('reorderLevel').value);
   const ok = runWrite((s) => setReorderLevel(s, currentUser, storeId, sku, level), {
     errorBox: 'reorderErrors',
-    success: `Reorder level for ${findProduct(state, sku).name} at ${storeNameOf(storeId)} is now ${level}.`,
+    success: `Reorder level for ${productLabel(findProduct(state, sku))} at ${storeNameOf(storeId)} is now ${level}.`,
   });
   if (ok) closeModal('reorderModal');
 }
@@ -524,6 +528,7 @@ function onProductSubmit(event) {
   const input = {
     sku: $('productSku').value,
     name: $('productName').value,
+    brand: $('productBrand').value,
     price: Number($('productPrice').value),
     reorderLevel: Number($('productReorder').value),
   };

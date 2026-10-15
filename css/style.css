@@ -83,6 +83,14 @@
   line-height: 1.2;
 }
 
+/* Brand under the product name in the table and cart. */
+.product-brand {
+  display: block;
+  font-size: 0.8125em;
+  font-weight: 400;
+  color: var(--bs-secondary-color);
+}
+
 .qty-cell {
   font-variant-numeric: tabular-nums;
 }

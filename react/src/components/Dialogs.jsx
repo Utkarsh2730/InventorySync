@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { findProduct } from '../../../js/inventory.js';
+import { findProduct, productLabel } from '../../../js/inventory.js';
 import { storeNameOf } from '../format.js';
 import Modal from './Modal.jsx';
+
+// Same rule as ENGLISH_TEXT in inventory.js, written for the HTML pattern attribute.
+const ENGLISH_PATTERN = "[A-Za-z0-9 .,'\"&\\(\\)\\/+%\\-]+";
 
 // Each dialog collects input and calls onConfirm(values). onConfirm runs the
 // rule from inventory.js and returns { ok, errors }; errors stay in the dialog.
@@ -9,7 +12,7 @@ import Modal from './Modal.jsx';
 function describe(state, storeId, sku) {
   const p = findProduct(state, sku);
   const entry = state.stock[storeId][sku];
-  return `${p.name} (${sku}) at ${storeNameOf(state, storeId)}: ${entry.qty} in stock, reorder at ${entry.reorderLevel}.`;
+  return `${productLabel(p)}, SKU ${sku}, at ${storeNameOf(state, storeId)}: ${entry.qty} in stock, reorder at ${entry.reorderLevel}.`;
 }
 
 function useConfirm(onConfirm) {
@@ -79,12 +82,12 @@ export function ReorderDialog({ state, storeId, sku, onConfirm, onClose }) {
 }
 
 export function ProductDialog({ onConfirm, onClose }) {
-  const [form, setForm] = useState({ sku: '', name: '', price: '', reorderLevel: '' });
+  const [form, setForm] = useState({ sku: '', name: '', brand: '', price: '', reorderLevel: '' });
   const [errors, submit] = useConfirm(onConfirm);
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
   return (
     <Modal title="Add product" submitLabel="Add product" errors={errors} onClose={onClose}
-      onSubmit={() => submit({ sku: form.sku, name: form.name, price: Number(form.price), reorderLevel: Number(form.reorderLevel) })}>
+      onSubmit={() => submit({ sku: form.sku, name: form.name, brand: form.brand, price: Number(form.price), reorderLevel: Number(form.reorderLevel) })}>
       <p className="small text-body-secondary">The product starts at 0 in every store. Receive or transfer stock afterwards.</p>
       <div className="mb-3">
         <label htmlFor="productSku" className="form-label">SKU</label>
@@ -95,8 +98,15 @@ export function ProductDialog({ onConfirm, onClose }) {
       <div className="mb-3">
         <label htmlFor="productName" className="form-label">Name</label>
         <input id="productName" type="text" className="form-control" required minLength={2} maxLength={80}
-          autoComplete="off" {...field('name')} />
-        <div className="invalid-feedback">Enter a name of 2–80 characters.</div>
+          autoComplete="off" placeholder="e.g. Toor Dal 1 kg" pattern={ENGLISH_PATTERN} {...field('name')} />
+        <div className="invalid-feedback">2–80 characters, in English letters only.</div>
+      </div>
+      <div className="mb-3">
+        <label htmlFor="productBrand" className="form-label">Brand</label>
+        <input id="productBrand" type="text" className="form-control" required minLength={2} maxLength={40}
+          autoComplete="off" placeholder="e.g. Tata Sampann" pattern={ENGLISH_PATTERN} {...field('brand')} />
+        <div className="invalid-feedback">2–40 characters, in English letters only.</div>
+        <div className="form-text">Stock the same item from another brand? Add it again with that brand and its own SKU.</div>
       </div>
       <div className="row g-3">
         <div className="col-6">

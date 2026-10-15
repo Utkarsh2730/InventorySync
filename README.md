@@ -25,7 +25,8 @@ Both use the same localStorage key, so a sale in a React tab shows up in a vanil
 
 ### 1.1 Bootstrap 5.3.8
 
-The two files are **already in `vendor/bootstrap/`** (copied from the `bootstrap@5.3.8` npm package).
+The two files are **already in `vendor/bootstrap/`** (copied from the `bootstrap@5.3.8` npm package,
+with the source-map comment removed).
 If you ever need to replace them:
 
 1. Download **`bootstrap-5.3.8-dist.zip`** from the official release page:
@@ -38,8 +39,9 @@ If you ever need to replace them:
    | `css/bootstrap.min.css`            | `vendor/bootstrap/css/bootstrap.min.css`      |
    | `js/bootstrap.bundle.min.js`       | `vendor/bootstrap/js/bootstrap.bundle.min.js` |
 
-   Optional: also copy `bootstrap.min.css.map` and `bootstrap.bundle.min.js.map` next to them to
-   silence DevTools source-map warnings. Use the **bundle** JS (it includes Popper).
+   Use the **bundle** JS (it includes Popper). Then delete the last line of each file (the
+   `sourceMappingURL` comment): the `.map` files are not shipped, and Vercel blocks them anyway,
+   so without this DevTools reports missing source maps.
 
 If the files are missing, the app shows a red banner saying so. The rules, storage and sync still
 work, but the layout, dialogs and the phone cart panel need Bootstrap.

@@ -19,35 +19,38 @@ import {
   isPositiveInt,
   defaultStoreFor,
   setSelling,
-  userFromInvite,
-  signInWithCode,
-  normalizeCode,
+  findAccount,
+  normalizeLoginId,
+  userFromSession,
+  signInAccount,
   productLabel,
 } from '../../js/inventory.js';
 import { downloadRowsAsCsv } from '../../js/export.js';
 import { useInventory } from './useInventory.js';
+import { hashForAccount, isCryptoAvailable } from '../../js/crypto.js';
 import { storeNameOf, userLabel } from './format.js';
 import { SignIn, SummaryCards, Filters, StockTable, AlertPanel } from './components/Dashboard.jsx';
 import { Cart, cartCount } from './components/Cart.jsx';
 import { ReceiveDialog, TransferDialog, ReorderDialog, ProductDialog } from './components/Dialogs.jsx';
 
-// sessionStorage: the invite code this tab signed in with. The shop's user is
-// worked out from it on every render, so a revoked code signs the shop out.
-const CODE_KEY = 'inventorysync:inviteCode';
+// sessionStorage: { loginId, hash } of the shop login this tab signed in
+// with. The user is worked out from it on every render, so a disabled login
+// or a new password from the admin page signs the shop out.
+const SESSION_KEY = 'inventorysync:shopSession';
 const THEME_KEY = 'inventorysync:theme';
 
-function readSessionCode() {
+function readSession() {
   try {
-    return sessionStorage.getItem(CODE_KEY);
+    return JSON.parse(sessionStorage.getItem(SESSION_KEY));
   } catch {
     return null;
   }
 }
 
-function writeSessionCode(code) {
+function writeSession(session) {
   try {
-    if (code) sessionStorage.setItem(CODE_KEY, code);
-    else sessionStorage.removeItem(CODE_KEY);
+    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else sessionStorage.removeItem(SESSION_KEY);
   } catch {
     // sessionStorage blocked: sign in again after a refresh
   }
@@ -90,7 +93,7 @@ let toastId = 0;
 export default function App() {
   const { state, notice, loadError, latest, write } = useInventory();
   const [theme, toggleTheme] = useTheme();
-  const [code, setCode] = useState(readSessionCode);
+  const [session, setSession] = useState(readSession); // { loginId, hash } or null
   const [signInErrors, setSignInErrors] = useState([]);
   const [filters, setFilters] = useState({ query: '', storeId: 'all', status: 'all' });
   const [cart, setCart] = useState({}); // sku -> qty, in memory for this tab
@@ -101,22 +104,22 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [banners, setBanners] = useState([]);
 
-  const user = state && code ? userFromInvite(state, code) : null;
+  const user = state && session ? userFromSession(state, session.loginId, session.hash) : null;
   const storeName = useCallback((id) => storeNameOf(state, id), [state]);
 
   useEffect(() => {
     if (notice) setBanners((b) => [...b, notice]);
   }, [notice]);
 
-  // The admin revoked this code (or reset the data): sign the shop out.
-  const codeIsDead = Boolean(state && code && !user);
+  // The admin disabled this login or changed its password: sign the shop out.
+  const sessionIsDead = Boolean(state && session && !user);
   useEffect(() => {
-    if (!codeIsDead) return;
-    writeSessionCode(null);
-    setCode(null);
+    if (!sessionIsDead) return;
+    writeSession(null);
+    setSession(null);
     setCart({});
-    setSignInErrors(['Your invite code is no longer active. Ask head office for a new one.']);
-  }, [codeIsDead]);
+    setSignInErrors(['You were signed out: head office disabled this login or changed its password.']);
+  }, [sessionIsDead]);
 
   const toast = useCallback((message, type = 'success') => {
     const id = ++toastId;
@@ -163,17 +166,24 @@ export default function App() {
   }
   if (!state) return <main className="container-fluid py-3"><p>Loading…</p></main>;
 
-  // Shop sign-in with an invite code from head office. The valid code is the
-  // permission; signing in records when it was used.
-  const signIn = (typed) => {
-    const wanted = normalizeCode(typed);
-    const result = write((s) => signInWithCode(s, wanted, new Date().toISOString()));
+  // Shop sign-in with the Shop ID and password from head office. The password
+  // is hashed with the account's salt (crypto.js); inventory.js compares.
+  const signIn = async (typedId, password) => {
+    if (!isCryptoAvailable()) {
+      setSignInErrors(['This page cannot check passwords here. Open it over https:// or from localhost.']);
+      return false;
+    }
+    const loginId = normalizeLoginId(typedId);
+    const account = findAccount(latest(), loginId);
+    const hash = account ? await hashForAccount(password, account) : null;
+    const result = write((s) => signInAccount(s, loginId, hash, new Date().toISOString()));
     if (!result.ok) {
       setSignInErrors(result.errors);
       return false;
     }
-    writeSessionCode(wanted);
-    setCode(wanted);
+    const next = { loginId, hash };
+    writeSession(next);
+    setSession(next);
     setSignInErrors([]);
     setCart({});
     setCartErrors([]);
@@ -182,8 +192,8 @@ export default function App() {
   };
 
   const signOut = () => {
-    writeSessionCode(null);
-    setCode(null);
+    writeSession(null);
+    setSession(null);
     setCart({});
     setCartErrors([]);
     setNavOpen(false);

@@ -6,16 +6,24 @@ export function StatusBadge({ status }) {
   return <span className={`badge status-badge ${BADGE_CLASS[status]}`}>{status}</span>;
 }
 
-// Shop sign-in with an invite code from head office (no admin sign-in here).
+// Shop sign-in with the Shop ID and password from head office (no admin
+// sign-in here).
 export function SignIn({ errors, onSignIn }) {
-  const [code, setCode] = useState('');
+  const [loginId, setLoginId] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [validated, setValidated] = useState(false);
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
     e.preventDefault();
     setValidated(true);
     if (!e.currentTarget.checkValidity()) return;
-    if (onSignIn(code)) {
-      setCode('');
+    setBusy(true);
+    const ok = await onSignIn(loginId, password);
+    setBusy(false);
+    setPassword('');
+    if (ok) {
+      setLoginId('');
       setValidated(false);
     }
   };
@@ -25,7 +33,7 @@ export function SignIn({ errors, onSignIn }) {
         <div className="card">
           <div className="card-body">
             <h1 id="signInHeading" className="h4">Shop sign in</h1>
-            <p className="text-body-secondary small mb-3">Enter the invite code your head office gave your shop.</p>
+            <p className="text-body-secondary small mb-3">Use the Shop ID and password your head office gave your shop.</p>
             <form noValidate className={validated ? 'was-validated' : ''} onSubmit={submit}>
               {errors.length > 0 && (
                 <div className="alert alert-danger" role="alert">
@@ -33,14 +41,25 @@ export function SignIn({ errors, onSignIn }) {
                   <ul className="mb-0">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
                 </div>
               )}
-              <label htmlFor="inviteCode" className="form-label">Invite code</label>
-              <input id="inviteCode" type="text" className="form-control form-control-lg invite-input" required
-                placeholder="ABCD-EFGH-JKLM" autoComplete="off" autoCapitalize="characters" spellCheck={false}
-                pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" aria-describedby="inviteHelp"
-                value={code} onChange={(e) => setCode(e.target.value)} />
-              <div className="invalid-feedback">Enter the 12-character code, for example ABCD-EFGH-JKLM.</div>
-              <p id="inviteHelp" className="form-text mb-3">Dashes and capital letters are optional.</p>
-              <button type="submit" className="btn btn-primary w-100">Sign in</button>
+              <div className="mb-3">
+                <label htmlFor="loginId" className="form-label">Shop ID</label>
+                <input id="loginId" type="text" className="form-control" required minLength={3} maxLength={32}
+                  autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="e.g. koramangala"
+                  value={loginId} onChange={(e) => setLoginId(e.target.value)} />
+                <div className="invalid-feedback">Enter your Shop ID.</div>
+              </div>
+              <div className="mb-3">
+                <label htmlFor="loginPassword" className="form-label">Password</label>
+                <div className="input-group has-validation">
+                  <input id="loginPassword" type={showPassword ? 'text' : 'password'} className="form-control" required maxLength={128}
+                    autoComplete="current-password" spellCheck={false}
+                    value={password} onChange={(e) => setPassword(e.target.value)} />
+                  <button type="button" className="btn btn-outline-secondary" aria-controls="loginPassword" aria-pressed={showPassword}
+                    onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button>
+                  <div className="invalid-feedback">Enter your password.</div>
+                </div>
+              </div>
+              <button type="submit" className="btn btn-primary w-100" disabled={busy}>Sign in</button>
             </form>
           </div>
         </div>

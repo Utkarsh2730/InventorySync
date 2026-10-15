@@ -20,22 +20,24 @@ import {
   findStore,
   isPositiveInt,
   defaultStoreFor,
-  userFromInvite,
-  signInWithCode,
-  normalizeCode,
+  findAccount,
+  normalizeLoginId,
+  userFromSession,
+  signInAccount,
   productLabel,
 } from './inventory.js';
 import * as store from './store.js';
 import { downloadRowsAsCsv } from './export.js';
 import { bs, inr, $, h, showBanner, toast, showErrors, hideErrors, initTheme } from './ui.js';
+import { hashForAccount, isCryptoAvailable } from './crypto.js';
 
-// sessionStorage: the invite code this tab signed in with. The shop's "user"
-// is worked out from that code on every redraw, so revoking a code in the
-// admin page signs the shop out straight away.
-const CODE_KEY = 'inventorysync:inviteCode';
+// sessionStorage: { loginId, hash } of the shop login this tab signed in
+// with. The user is worked out from it on every redraw, so a disabled login
+// or a new password from the admin page signs the shop out straight away.
+const SESSION_KEY = 'inventorysync:shopSession';
 
 let state = null; // the whole saved data object
-let signedInCode = null;
+let session = null; // { loginId, hash } or null
 let currentUser = null;
 const cart = new Map(); // sku -> qty, always for the signed-in manager's own store (kept in memory, per tab)
 const filters = { query: '', storeId: 'all', status: 'all' };
@@ -90,7 +92,7 @@ function refreshFromStorage() {
   const latest = store.readLatest();
   if (latest) {
     state = latest;
-    currentUser = signedInCode ? userFromInvite(state, signedInCode) : null;
+    currentUser = session ? userFromSession(state, session.loginId, session.hash) : null;
   }
 }
 
@@ -142,7 +144,7 @@ function render() {
 }
 
 // Signed-in shop shown in the navbar (no user switcher: each shop signs in
-// with its own invite code).
+// with its own Shop ID and password).
 function renderWho() {
   $('whoAmI').textContent = userLabel(currentUser);
 }
@@ -543,47 +545,64 @@ function onProductSubmit(event) {
 // Users and theme
 // ---------------------------------------------------------------------------
 
-// Shop sign-in with an invite code from head office.
-function onSignInSubmit(event) {
+// Shop sign-in with the Shop ID and password from head office. The password
+// is hashed here (crypto.js) with the account's salt; inventory.js compares.
+async function onSignInSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
   form.classList.add('was-validated');
   if (!form.checkValidity()) return;
-  refreshFromStorage(); // a code created a moment ago in the admin tab must work
-  const code = normalizeCode($('inviteCode').value);
-  const result = signInWithCode(state, code, new Date().toISOString());
-  if (!result.ok) {
-    showErrors('signInErrors', result.errors);
-    $('inviteCode').focus();
+  if (!isCryptoAvailable()) {
+    showErrors('signInErrors', ['This page cannot check passwords here. Open it over https:// or from localhost.']);
     return;
   }
-  const saved = store.save(result.state);
-  if (!saved.ok) {
-    showErrors('signInErrors', [saved.error]);
-    return;
-  }
-  state = result.state;
-  signedInCode = code;
-  currentUser = result.user;
+  const submit = $('signInSubmit');
+  submit.disabled = true;
   try {
-    sessionStorage.setItem(CODE_KEY, code);
-  } catch {
-    // sessionStorage blocked: the shop has to sign in again after a refresh
+    refreshFromStorage(); // a login created a moment ago in the admin tab must work
+    const loginId = normalizeLoginId($('loginId').value);
+    const account = findAccount(state, loginId);
+    const hash = account ? await hashForAccount($('loginPassword').value, account) : null;
+    refreshFromStorage(); // hashing takes a moment; use the newest data
+    const result = signInAccount(state, loginId, hash, new Date().toISOString());
+    if (!result.ok) {
+      showErrors('signInErrors', result.errors);
+      $('loginPassword').value = '';
+      $('loginPassword').focus();
+      return;
+    }
+    const saved = store.save(result.state);
+    if (!saved.ok) {
+      showErrors('signInErrors', [saved.error]);
+      return;
+    }
+    state = result.state;
+    session = { loginId, hash };
+    currentUser = result.user;
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    } catch {
+      // sessionStorage blocked: the shop has to sign in again after a refresh
+    }
+    form.reset();
+    form.classList.remove('was-validated');
+    hideErrors('signInErrors');
+    cart.clear();
+    resetFilters();
+    render();
+    toast(`Signed in as ${currentUser.name}.`);
+  } catch (err) {
+    showErrors('signInErrors', [`Could not sign in: ${err.message}`]);
+  } finally {
+    submit.disabled = false;
   }
-  form.reset();
-  form.classList.remove('was-validated');
-  hideErrors('signInErrors');
-  cart.clear();
-  resetFilters();
-  render();
-  toast(`Signed in as ${currentUser.name}.`);
 }
 
 function signOut(message) {
-  signedInCode = null;
+  session = null;
   currentUser = null;
   try {
-    sessionStorage.removeItem(CODE_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
   } catch {
     // nothing to remove
   }
@@ -591,7 +610,7 @@ function signOut(message) {
   hideErrors('cartErrors');
   render();
   if (message) showErrors('signInErrors', [message]);
-  $('inviteCode').focus();
+  $('loginId').focus();
 }
 
 // Start each user on their own view: a manager sees their store, the buyer all stores.
@@ -603,12 +622,12 @@ function resetFilters() {
 
 function restoreUser() {
   try {
-    signedInCode = sessionStorage.getItem(CODE_KEY);
+    session = JSON.parse(sessionStorage.getItem(SESSION_KEY));
   } catch {
-    signedInCode = null;
+    session = null;
   }
-  currentUser = signedInCode ? userFromInvite(state, signedInCode) : null;
-  if (!currentUser) signedInCode = null;
+  currentUser = session ? userFromSession(state, session.loginId, session.hash) : null;
+  if (!currentUser) session = null;
   resetFilters();
 }
 
@@ -618,6 +637,13 @@ function restoreUser() {
 
 function bindEvents() {
   $('signInForm').addEventListener('submit', onSignInSubmit);
+  $('togglePassword').addEventListener('click', (e) => {
+    const input = $('loginPassword');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    e.currentTarget.textContent = show ? 'Hide' : 'Show';
+    e.currentTarget.setAttribute('aria-pressed', String(show));
+  });
   $('signOutBtn').addEventListener('click', () => signOut());
 
   // One click: list only the items this shop has stopped selling (or go back).
@@ -738,9 +764,9 @@ async function start() {
   store.subscribe((fresh) => {
     state = fresh;
     const wasSignedIn = Boolean(currentUser);
-    currentUser = signedInCode ? userFromInvite(state, signedInCode) : null;
+    currentUser = session ? userFromSession(state, session.loginId, session.hash) : null;
     if (wasSignedIn && !currentUser) {
-      signOut('Your invite code is no longer active. Ask head office for a new one.');
+      signOut('You were signed out: head office disabled this login or changed its password.');
       return;
     }
     render();

@@ -17,22 +17,24 @@ import {
   isValidState,
   defaultStoreFor,
   setSelling,
-  createInvite,
-  revokeInvite,
-  signInWithCode,
-  userFromInvite,
-  normalizeCode,
+  createAccount,
+  resetAccountPassword,
+  setAccountDisabled,
+  disableAllAccounts,
+  signInAccount,
+  userFromSession,
+  suggestLoginId,
   addStore,
   upgradeData,
   productLabel,
-  revokeAllInvites,
 } from './inventory.js';
+import { generatePassword, makePasswordRecord, hashForAccount } from './crypto.js';
 import { escapeCsvCell, rowsToCsv } from './export.js';
 
 // A small fixture: two stores, two products, two managers and a buyer.
 function makeState() {
   return {
-    version: 2,
+    version: 3,
     stores: [
       { id: 'A', name: 'Store A', city: 'Test' },
       { id: 'B', name: 'Store B', city: 'Test' },
@@ -51,7 +53,7 @@ function makeState() {
       { id: 'buyer', name: 'Buyer', role: 'buyer', storeId: null },
       { id: 'admin', name: 'Admin', role: 'admin', storeId: null },
     ],
-    invites: [],
+    accounts: [],
     log: [],
   };
 }
@@ -278,7 +280,7 @@ export function runTests() {
     ];
     old.stock = { A: { 'BASM-5KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 2, reorderLevel: 1 } }, B: { 'BASM-5KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 2, reorderLevel: 1 } } };
     const up = upgradeData(old);
-    return up.version === 2 && isValidState(up) && old.version === 1
+    return up.version === 3 && isValidState(up) && old.version === 1
       && up.products[0].name === 'Basmati Rice 5 kg' && up.products[0].brand === 'India Gate'
       && up.products[1].name === 'Soap (4-pack)' && up.products[1].brand === 'Unbranded'
       && up.stock.A['MY-OWN'].qty === 2 && upgradeData({ version: 99 }) === null;
@@ -316,49 +318,84 @@ export function runTests() {
     return addProduct(s, user(s, 'mA'), { sku: 'TEA-1', name: 'Tea', brand: 'Red Label', price: 10, reorderLevel: 1 }).ok;
   });
 
-  // --- Invite codes and shops (admin) -------------------------------------
-  const CODE = 'ABCD-EFGH-JKLM';
+  // --- Shop logins (Shop ID + password) and shops (admin) -----------------
+  // The rules only compare hashes, so these checks use stand-in hash strings;
+  // checkPasswordHashing() below checks the real PBKDF2 hashing.
   const NOW = '2026-10-16T10:00:00.000Z';
-  check('Invites: only the admin can create codes; a shop code signs in as that shop', () => {
+  const PW = { salt: 'c2FsdA==', hash: 'HASH-ONE', iterations: 150000 };
+  const PW2 = { salt: 'c2FsdDI=', hash: 'HASH-TWO', iterations: 150000 };
+  const withLogin = (storeId = 'A', loginId = 'shop-a') => {
     const s = makeState();
-    const refused = createInvite(s, user(s, 'buyer'), { code: CODE, storeId: 'A', label: 'Shop A', now: NOW });
-    const made = createInvite(s, user(s, 'admin'), { code: CODE, storeId: 'A', label: 'Shop A', now: NOW });
-    const signed = signInWithCode(made.state, 'abcd efgh jklm', NOW);
+    return createAccount(s, user(s, 'admin'), { loginId, storeId, label: 'Shop A counter', password: PW, now: NOW });
+  };
+  check('Logins: only the admin can create one; the right password signs in as that shop', () => {
+    const s = makeState();
+    const refused = createAccount(s, user(s, 'buyer'), { loginId: 'shop-a', storeId: 'A', label: 'Shop A', password: PW, now: NOW });
+    const made = withLogin();
+    const signed = signInAccount(made.state, ' Shop-A ', 'HASH-ONE', NOW);
     return !refused.ok && made.ok && signed.ok && signed.user.role === 'manager' && signed.user.storeId === 'A'
-      && signed.state.invites[0].lastUsedAt === NOW && s.invites.length === 0;
+      && signed.state.accounts[0].lastUsedAt === NOW && s.accounts.length === 0
+      && !('password' in made.state.accounts[0]);
   });
-  check('Invites: a head-office code signs in as the buyer for all shops', () => {
+  check('Logins: a wrong password and an unknown Shop ID get the same message', () => {
+    const made = withLogin().state;
+    const wrong = signInAccount(made, 'shop-a', 'NOT-IT', NOW);
+    const unknown = signInAccount(made, 'nobody', 'HASH-ONE', NOW);
+    return !wrong.ok && !unknown.ok && wrong.errors[0] === unknown.errors[0] && wrong.errors[0] === 'Wrong Shop ID or password.';
+  });
+  check('Logins: a head-office login signs in as the buyer for all shops', () => {
     const s = makeState();
-    const made = createInvite(s, user(s, 'admin'), { code: CODE, storeId: 'all', label: 'Head office', now: NOW });
-    const u = userFromInvite(made.state, CODE);
+    const made = createAccount(s, user(s, 'admin'), { loginId: 'head-office', storeId: 'all', label: 'Head office', password: PW, now: NOW });
+    const u = signInAccount(made.state, 'head-office', 'HASH-ONE', NOW).user;
     return made.ok && u.role === 'buyer' && u.storeId === null && can(u, 'transfer', 'A');
   });
-  check('Invites: duplicate, badly formed or shop-less codes are refused', () => {
+  check('Logins: duplicate or badly formed Shop IDs, unknown shops and missing passwords are refused', () => {
     const s = makeState();
     const a = user(s, 'admin');
-    const first = createInvite(s, a, { code: CODE, storeId: 'A', label: 'Shop A', now: NOW });
-    return !createInvite(first.state, a, { code: CODE, storeId: 'B', label: 'Shop B', now: NOW }).ok
-      && !createInvite(s, a, { code: 'SHORT', storeId: 'A', label: 'Shop A', now: NOW }).ok
-      && !createInvite(s, a, { code: CODE, storeId: 'NOPE', label: 'Shop A', now: NOW }).ok
-      && !createInvite(s, a, { code: CODE, storeId: 'A', label: 'x', now: NOW }).ok;
+    const first = withLogin().state;
+    return !createAccount(first, a, { loginId: 'shop-a', storeId: 'B', label: 'Shop B', password: PW, now: NOW }).ok
+      && !createAccount(s, a, { loginId: 'ab', storeId: 'A', label: 'Shop A', password: PW, now: NOW }).ok
+      && !createAccount(s, a, { loginId: 'shop a!', storeId: 'A', label: 'Shop A', password: PW, now: NOW }).ok
+      && !createAccount(s, a, { loginId: 'shop-x', storeId: 'NOPE', label: 'Shop A', password: PW, now: NOW }).ok
+      && !createAccount(s, a, { loginId: 'shop-x', storeId: 'A', label: 'Shop A', password: { salt: '', hash: '' }, now: NOW }).ok;
   });
-  check('Invites: a revoked or unknown code cannot sign in', () => {
+  check('Logins: a new password or a disabled login signs the shop out; enabling lets it back in', () => {
     const s = makeState();
     const a = user(s, 'admin');
-    const made = createInvite(s, a, { code: CODE, storeId: 'A', label: 'Shop A', now: NOW }).state;
-    const revoked = revokeInvite(made, a, CODE).state;
-    return userFromInvite(revoked, CODE) === null && !signInWithCode(revoked, CODE, NOW).ok
-      && !signInWithCode(made, 'ZZZZ-ZZZZ-ZZZZ', NOW).ok && !revokeInvite(made, user(s, 'mA'), CODE).ok
-      && normalizeCode(' abcd-efgh-jklm ') === CODE;
+    const made = withLogin().state;
+    const reset = resetAccountPassword(made, a, 'shop-a', PW2).state;
+    const off = setAccountDisabled(made, a, 'shop-a', true).state;
+    const on = setAccountDisabled(off, a, 'shop-a', false).state;
+    return userFromSession(made, 'shop-a', 'HASH-ONE') !== null
+      && userFromSession(reset, 'shop-a', 'HASH-ONE') === null && signInAccount(reset, 'shop-a', 'HASH-TWO', NOW).ok
+      && userFromSession(off, 'shop-a', 'HASH-ONE') === null
+      && signInAccount(off, 'shop-a', 'HASH-ONE', NOW).errors[0].includes('disabled')
+      && userFromSession(on, 'shop-a', 'HASH-ONE') !== null
+      && !resetAccountPassword(made, user(s, 'mA'), 'shop-a', PW2).ok && !setAccountDisabled(made, user(s, 'buyer'), 'shop-a', true).ok;
   });
-  check('Forgot passcode: revoking every code signs every shop out but keeps stock and shops', () => {
+  check('Logins: Shop IDs are suggested from the shop name and never repeat', () => {
     const s = makeState();
-    const a = user(s, 'admin');
-    const one = createInvite(s, a, { code: CODE, storeId: 'A', label: 'Shop A', now: NOW }).state;
-    const two = createInvite(one, a, { code: 'WXYZ-WXYZ-WXYZ', storeId: 'all', label: 'Head office', now: NOW }).state;
-    const r = revokeAllInvites(two);
-    return r.ok && r.revoked === 2 && userFromInvite(r.state, CODE) === null && userFromInvite(r.state, 'WXYZ-WXYZ-WXYZ') === null
-      && r.state.stock.A.DAL.qty === 3 && r.state.stores.length === 2 && two.invites.every((i) => !i.revoked);
+    const first = suggestLoginId(s, 'A');
+    const taken = createAccount(s, user(s, 'admin'), { loginId: first, storeId: 'A', label: 'Shop A', password: PW, now: NOW }).state;
+    return first === 'store-a' && suggestLoginId(taken, 'A') === 'store-a-2' && suggestLoginId(s, 'all') === 'head-office';
+  });
+  check('Forgot passcode: disabling every login signs every shop out but keeps stock and shops', () => {
+    const s = makeState();
+    const one = withLogin().state;
+    const two = createAccount(one, user(s, 'admin'), { loginId: 'head-office', storeId: 'all', label: 'Head office', password: PW2, now: NOW }).state;
+    const r = disableAllAccounts(two);
+    return r.ok && r.disabled === 2 && userFromSession(r.state, 'shop-a', 'HASH-ONE') === null
+      && userFromSession(r.state, 'head-office', 'HASH-TWO') === null
+      && r.state.stock.A.DAL.qty === 3 && r.state.stores.length === 2 && two.accounts.every((x) => !x.disabled);
+  });
+  check('Upgrade: version 2 data loses its invite codes and gets an empty list of logins', () => {
+    const v2 = makeState();
+    v2.version = 2;
+    delete v2.accounts;
+    v2.invites = [{ code: 'ABCD-EFGH-JKLM', role: 'manager', storeId: 'A', label: 'Old code', revoked: false }];
+    const up = upgradeData(v2);
+    return up.version === 3 && !('invites' in up) && Array.isArray(up.accounts) && up.accounts.length === 0
+      && isValidState(up) && up.stock.A.DAL.qty === 3;
   });
   check('Admin can add a shop; it starts with every product at 0; duplicates are refused', () => {
     const s = makeState();
@@ -375,12 +412,12 @@ export function runTests() {
     neg.stock.A.DAL.qty = -1;
     const old = makeState();
     old.version = 1; // must be upgraded first
-    const noInvites = makeState();
-    delete noInvites.invites; // saved before invite codes existed
-    const badInvites = makeState();
-    badInvites.invites = [{ code: 1 }];
+    const noAccounts = makeState();
+    delete noAccounts.accounts;
+    const badAccounts = makeState();
+    badAccounts.accounts = [{ loginId: 1 }];
     return isValidState(makeState()) && !isValidState(neg) && !isValidState(old) && !isValidState(null)
-      && isValidState(noInvites) && !isValidState(badInvites);
+      && isValidState(noAccounts) && !isValidState(badAccounts);
   });
 
   return results;
@@ -388,15 +425,34 @@ export function runTests() {
 
 // Also check the shipped sample file, which needs fetch (so it is async).
 export async function checkSampleData(url = 'data/sample-data.json') {
-  const name = 'Sample data file is valid, English only, every product has a brand, one item comes from two brands, OK/Low/Out cases';
+  const name = 'Sample data file is valid, English only, every product has a brand, one item comes from two brands, no logins yet, OK/Low/Out cases';
   try {
     const data = await (await fetch(url, { cache: 'no-store' })).json();
     const statuses = new Set(buildRows(data).map((r) => r.status));
     const englishOnly = data.products.every((p) => /^[\x20-\x7E]+$/.test(p.name) && /^[\x20-\x7E]+$/.test(p.brand));
     const twoBrands = data.products.some((p) => data.products.some((q) => q !== p && q.name === p.name && q.brand !== p.brand));
-    const passed = isValidState(data) && data.stores.length === 3 && Array.isArray(data.invites) && data.invites.length === 0
+    const passed = isValidState(data) && data.stores.length === 3 && Array.isArray(data.accounts) && data.accounts.length === 0
       && englishOnly && twoBrands && statuses.has('OK') && statuses.has('Low') && statuses.has('Out');
     return { name, passed, error: passed ? '' : 'sample data does not match' };
+  } catch (err) {
+    return { name, passed: false, error: err.message };
+  }
+}
+
+// The real password hashing (Web Crypto, so async): a generated password
+// hashes to the stored record, and a different password does not.
+export async function checkPasswordHashing() {
+  const name = 'Passwords: generated passwords look right, are stored only as a hash, and only the right one matches';
+  try {
+    const password = generatePassword();
+    const record = await makePasswordRecord(password);
+    const right = await hashForAccount(password, record);
+    const wrong = await hashForAccount(`${password}x`, record);
+    const other = await makePasswordRecord(password); // new salt, new hash
+    const passed = /^[A-Za-z2-9]{4}-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}$/.test(password)
+      && right === record.hash && wrong !== record.hash && other.hash !== record.hash
+      && !JSON.stringify(record).includes(password);
+    return { name, passed, error: passed ? '' : 'hashing did not behave as expected' };
   } catch (err) {
     return { name, passed: false, error: err.message };
   }

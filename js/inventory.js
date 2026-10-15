@@ -12,7 +12,7 @@
 // A refused or invalid call returns { ok: false, errors: [...], state } where
 // `state` is the very same object that was passed in, untouched.
 
-export const DATA_VERSION = 2; // 2: products have a brand; names are English only
+export const DATA_VERSION = 3; // 2: products have brands, English-only names; 3: shop logins replace invite codes
 export const STATUSES = ['OK', 'Low', 'Out', 'Stopped'];
 export const MAX_QTY = 100000; // upper bound for any single quantity or level
 export const LOG_LIMIT = 1000; // keep only the newest log entries
@@ -26,7 +26,7 @@ export const ACTION_LABELS = {
   setReorder: 'change reorder levels',
   addProduct: 'add products',
   setSelling: 'change which items this shop sells',
-  manageInvites: 'manage invite codes',
+  manageAccounts: 'manage shop logins',
   addStore: 'add shops',
 };
 
@@ -50,7 +50,7 @@ export function statusOf(qty, reorderLevel) {
 //                            only); add products to the chain catalogue
 //   Inventory Buyer (head office code): receive (any store), transfer,
 //                            setReorder, addProduct; never sell
-//   Admin:                   manage invite codes, add shops; no stock changes
+//   Admin:                   manage shop logins, add shops; no stock changes
 // Anything else, or a missing user, is refused.
 export function can(user, action, storeId) {
   if (!user) return false;
@@ -63,7 +63,7 @@ export function can(user, action, storeId) {
     return ['receive', 'transfer', 'setReorder', 'addProduct'].includes(action);
   }
   if (user.role === 'admin') {
-    return ['manageInvites', 'addStore'].includes(action);
+    return ['manageAccounts', 'addStore'].includes(action);
   }
   return false;
 }
@@ -322,100 +322,147 @@ export function setSelling(state, user, storeId, sku, selling) {
 }
 
 // ---------------------------------------------------------------------------
-// Shops and invite codes (admin)
+// Shops and shop logins (admin)
 // ---------------------------------------------------------------------------
 
-// Codes look like ABCD-EFGH-JKLM. The admin page makes the random part;
-// this file only checks and stores codes, so it stays free of randomness.
-export const INVITE_PATTERN = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+// A shop login is a Shop ID plus a password. Passwords are never stored: the
+// account keeps a random salt and a PBKDF2 hash. Hashing needs the browser's
+// crypto (see crypto.js), so the pages hash first and pass the hash in here;
+// this file only stores and compares hashes and stays synchronous and pure.
+//
+// account: { loginId, role, storeId, label, salt, hash, iterations,
+//            createdAt, lastUsedAt, disabled }
 
-// Accept codes typed in lower case, with spaces or without dashes.
-export function normalizeCode(code) {
-  const plain = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return plain.length === 12 ? `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}` : plain;
+export const LOGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]{2,31}$/;
+
+export function normalizeLoginId(loginId) {
+  return String(loginId || '').trim().toLowerCase();
 }
 
-function invitesOf(state) {
-  return Array.isArray(state.invites) ? state.invites : [];
+function accountsOf(state) {
+  return Array.isArray(state.accounts) ? state.accounts : [];
 }
 
-export function findInvite(state, code) {
-  const wanted = normalizeCode(code);
-  return invitesOf(state).find((i) => i.code === wanted) || null;
+export function findAccount(state, loginId) {
+  const wanted = normalizeLoginId(loginId);
+  return accountsOf(state).find((a) => a.loginId === wanted) || null;
 }
 
-// input: { code, storeId ('all' for a head-office code), label, now (ISO time) }
-export function createInvite(state, actor, input) {
-  if (!can(actor, 'manageInvites', null)) return refuse(state, [refusalMessage(state, actor, 'manageInvites', null)]);
+// A readable, unused Shop ID: "koramangala", "koramangala-2", "head-office"…
+export function suggestLoginId(state, storeId) {
+  const store = findStore(state, storeId);
+  const base = (storeId === 'all' ? 'head-office' : (store ? store.name : 'shop'))
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 28) || 'shop';
+  const padded = base.length >= 3 ? base : `${base}-shop`;
+  let id = padded;
+  for (let n = 2; findAccount(state, id); n += 1) id = `${padded}-${n}`;
+  return id;
+}
 
-  const code = normalizeCode(input && input.code);
+function isPasswordRecord(r) {
+  return Boolean(r) && typeof r.salt === 'string' && r.salt.length > 0
+    && typeof r.hash === 'string' && r.hash.length > 0 && Number.isInteger(r.iterations) && r.iterations >= 1000;
+}
+
+// input: { loginId, storeId ('all' = head office), label, password: { salt, hash, iterations }, now }
+export function createAccount(state, actor, input) {
+  if (!can(actor, 'manageAccounts', null)) return refuse(state, [refusalMessage(state, actor, 'manageAccounts', null)]);
+
+  const loginId = normalizeLoginId(input && input.loginId);
   const storeId = input && input.storeId;
   const label = String((input && input.label) || '').trim();
+  const password = input && input.password;
 
   const errors = [];
-  if (!INVITE_PATTERN.test(code)) errors.push('The invite code has the wrong format.');
-  else if (findInvite(state, code)) errors.push('That invite code already exists. Generate a new one.');
-  if (storeId !== 'all' && !findStore(state, storeId)) errors.push('Choose the shop this code is for.');
-  if (label.length < 2 || label.length > 60) errors.push('Give the code a name of 2–60 characters, for example "Indiranagar counter".');
+  if (!LOGIN_ID_PATTERN.test(loginId)) errors.push('Shop ID must be 3–32 lower-case letters, digits or dashes.');
+  else if (findAccount(state, loginId)) errors.push(`Shop ID "${loginId}" is already taken.`);
+  if (storeId !== 'all' && !findStore(state, storeId)) errors.push('Choose the shop this login is for.');
+  if (label.length < 2 || label.length > 60) errors.push('Give the login a name of 2–60 characters, for example "Indiranagar counter".');
+  if (!isPasswordRecord(password)) errors.push('The password could not be prepared. Try again.');
   if (errors.length > 0) return refuse(state, errors);
 
   const next = clone(state);
-  next.invites = invitesOf(next);
-  next.invites.push({
-    code,
+  next.accounts = accountsOf(next);
+  next.accounts.push({
+    loginId,
     role: storeId === 'all' ? 'buyer' : 'manager',
     storeId: storeId === 'all' ? null : storeId,
     label,
+    salt: password.salt,
+    hash: password.hash,
+    iterations: password.iterations,
     createdAt: (input && input.now) || new Date().toISOString(),
     lastUsedAt: null,
-    revoked: false,
+    disabled: false,
   });
   return { ok: true, errors: [], state: next };
 }
 
-export function revokeInvite(state, actor, code) {
-  if (!can(actor, 'manageInvites', null)) return refuse(state, [refusalMessage(state, actor, 'manageInvites', null)]);
-  const invite = findInvite(state, code);
-  if (!invite) return refuse(state, ['Unknown invite code.']);
-  if (invite.revoked) return refuse(state, ['That invite code is already revoked.']);
+// New password for a login. The old password stops working and anyone
+// signed in with it is signed out (their session no longer matches).
+export function resetAccountPassword(state, actor, loginId, password) {
+  if (!can(actor, 'manageAccounts', null)) return refuse(state, [refusalMessage(state, actor, 'manageAccounts', null)]);
+  const account = findAccount(state, loginId);
+  if (!account) return refuse(state, ['Unknown Shop ID.']);
+  if (!isPasswordRecord(password)) return refuse(state, ['The password could not be prepared. Try again.']);
 
   const next = clone(state);
-  next.invites.find((i) => i.code === invite.code).revoked = true;
+  Object.assign(next.accounts.find((a) => a.loginId === account.loginId), {
+    salt: password.salt, hash: password.hash, iterations: password.iterations,
+  });
   return { ok: true, errors: [], state: next };
 }
 
-// Forgotten admin passcode: the admin page can only start over by revoking
-// every invite code (there is no server to prove who is asking). Like
-// signInWithCode this has no signed-in user; it can only ever take access
-// away, never give it. Stock, shops and products are kept.
-export function revokeAllInvites(state) {
-  const next = clone(state);
-  next.invites = invitesOf(next).map((i) => ({ ...i, revoked: true }));
-  return { ok: true, errors: [], state: next, revoked: invitesOf(state).filter((i) => !i.revoked).length };
-}
-
-// The signed-in "user" for a shop is its invite code. Revoked or unknown
-// codes give null, which signs the shop out.
-export function userFromInvite(state, code) {
-  const invite = findInvite(state, code);
-  if (!invite || invite.revoked) return null;
-  if (invite.role === 'manager' && !findStore(state, invite.storeId)) return null;
-  return { id: `invite:${invite.code}`, name: invite.label, role: invite.role, storeId: invite.storeId };
-}
-
-// Signing in is the one write that has no signed-in user yet: the valid,
-// unrevoked code itself is the permission. It records when the code was used.
-export function signInWithCode(state, code, now) {
-  const user = userFromInvite(state, code);
-  if (!user) {
-    const invite = findInvite(state, code);
-    const reason = invite && invite.revoked
-      ? 'This invite code has been revoked. Ask head office for a new one.'
-      : 'That invite code is not valid. Check it and try again.';
-    return { ok: false, errors: [reason], state, user: null };
+export function setAccountDisabled(state, actor, loginId, disabled) {
+  if (!can(actor, 'manageAccounts', null)) return refuse(state, [refusalMessage(state, actor, 'manageAccounts', null)]);
+  const account = findAccount(state, loginId);
+  if (!account) return refuse(state, ['Unknown Shop ID.']);
+  if (Boolean(account.disabled) === Boolean(disabled)) {
+    return refuse(state, [`Shop ID "${account.loginId}" is already ${disabled ? 'disabled' : 'enabled'}.`]);
   }
   const next = clone(state);
-  next.invites.find((i) => i.code === normalizeCode(code)).lastUsedAt = now || new Date().toISOString();
+  next.accounts.find((a) => a.loginId === account.loginId).disabled = Boolean(disabled);
+  return { ok: true, errors: [], state: next };
+}
+
+// Forgotten admin passcode: the admin page can only start over by disabling
+// every shop login (there is no server to prove who is asking). It has no
+// signed-in user and can only take access away. Stock and shops are kept.
+export function disableAllAccounts(state) {
+  const next = clone(state);
+  next.accounts = accountsOf(next).map((a) => ({ ...a, disabled: true }));
+  return { ok: true, errors: [], state: next, disabled: accountsOf(state).filter((a) => !a.disabled).length };
+}
+
+function userFromAccount(state, account) {
+  if (!account || account.disabled) return null;
+  if (account.role === 'manager' && !findStore(state, account.storeId)) return null;
+  return { id: `login:${account.loginId}`, name: account.label, role: account.role, storeId: account.storeId };
+}
+
+// A tab stays signed in while its saved { loginId, hash } still matches the
+// account: a new password, a disabled login or a reset signs it out.
+export function userFromSession(state, loginId, hash) {
+  const account = findAccount(state, loginId);
+  if (!account || !hash || account.hash !== hash) return null;
+  return userFromAccount(state, account);
+}
+
+// Signing in is the one write with no signed-in user yet: the matching
+// password hash is the permission. It records when the login was used. A
+// wrong ID and a wrong password give the same message, so nobody can find
+// out which Shop IDs exist.
+export function signInAccount(state, loginId, hash, now) {
+  const account = findAccount(state, loginId);
+  if (!account || !hash || account.hash !== hash) {
+    return { ok: false, errors: ['Wrong Shop ID or password.'], state, user: null };
+  }
+  const user = userFromAccount(state, account);
+  if (!user) {
+    return { ok: false, errors: ['This login has been disabled. Ask head office.'], state, user: null };
+  }
+  const next = clone(state);
+  next.accounts.find((a) => a.loginId === account.loginId).lastUsedAt = now || new Date().toISOString();
   return { ok: true, errors: [], state: next, user };
 }
 
@@ -561,14 +608,24 @@ export function englishOnly(text) {
 export function upgradeData(data) {
   if (!data || typeof data !== 'object') return null;
   if (data.version === DATA_VERSION) return data;
-  if (data.version !== 1 || !Array.isArray(data.products)) return null;
+  if (![1, 2].includes(data.version) || !Array.isArray(data.products)) return null;
   const next = clone(data);
-  next.version = 2;
-  next.products = next.products.map((p) => ({
-    ...p,
-    name: englishOnly(p.name) || p.sku,
-    brand: typeof p.brand === 'string' && p.brand ? englishOnly(p.brand) || 'Unbranded' : (SAMPLE_BRANDS[p.sku] || 'Unbranded'),
-  }));
+  if (next.version === 1) {
+    // 1 -> 2: brands added, names kept in English only.
+    next.version = 2;
+    next.products = next.products.map((p) => ({
+      ...p,
+      name: englishOnly(p.name) || p.sku,
+      brand: typeof p.brand === 'string' && p.brand ? englishOnly(p.brand) || 'Unbranded' : (SAMPLE_BRANDS[p.sku] || 'Unbranded'),
+    }));
+  }
+  if (next.version === 2) {
+    // 2 -> 3: shop logins (Shop ID + password) replace invite codes. Old codes
+    // cannot become passwords, so the admin creates logins again.
+    next.version = 3;
+    delete next.invites;
+    if (!Array.isArray(next.accounts)) next.accounts = [];
+  }
   return next;
 }
 
@@ -593,11 +650,11 @@ export function isValidState(s) {
   for (const u of s.users) {
     if (!u || typeof u.id !== 'string' || typeof u.name !== 'string' || !ROLE_LABELS[u.role]) return false;
   }
-  // Invite codes were added later, so older saved data may not have them.
-  if (s.invites !== undefined) {
-    if (!Array.isArray(s.invites)) return false;
-    for (const i of s.invites) {
-      if (!i || typeof i.code !== 'string' || typeof i.label !== 'string' || !ROLE_LABELS[i.role]) return false;
+  if (s.accounts !== undefined) {
+    if (!Array.isArray(s.accounts)) return false;
+    for (const a of s.accounts) {
+      if (!a || typeof a.loginId !== 'string' || typeof a.label !== 'string' || !ROLE_LABELS[a.role]
+        || typeof a.salt !== 'string' || typeof a.hash !== 'string') return false;
     }
   }
   return true;

@@ -21,10 +21,11 @@
   <ol id="results"></ol>
 
   <script type="module">
-    import { runTests, checkSampleData } from './js/tests.js';
+    import { runTests, checkSampleData, checkPasswordHashing } from './js/tests.js';
 
     const results = runTests();
     results.push(await checkSampleData());
+    results.push(await checkPasswordHashing());
 
     const list = document.getElementById('results');
     for (const r of results) {

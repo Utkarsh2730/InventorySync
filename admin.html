@@ -64,15 +64,15 @@
                 <div id="forgotPanel" class="forgot-panel mt-2 d-none">
                   <p class="small mb-2">
                     The passcode is stored only in this browser and cannot be recovered. You can set a new one,
-                    but to keep the shops safe <strong>every invite code will be revoked</strong>: shops are signed out
-                    and need new codes. Stock, shops and products are kept.
+                    but to keep the shops safe <strong>every shop login will be disabled</strong> and shops are signed
+                    out. Afterwards you can enable each login again or reset its password. Stock, shops and products are kept.
                   </p>
                   <form id="forgotForm" novalidate>
                     <div id="forgotErrors" class="alert alert-danger d-none" role="alert"></div>
                     <label for="forgotConfirm" class="form-label small">Type <strong>RESET</strong> to confirm</label>
                     <div class="input-group">
                       <input id="forgotConfirm" type="text" class="form-control" required pattern="RESET" autocomplete="off" autocapitalize="characters" spellcheck="false">
-                      <button type="submit" class="btn btn-outline-danger">Revoke codes and set a new passcode</button>
+                      <button type="submit" class="btn btn-outline-danger">Disable logins and set a new passcode</button>
                     </div>
                     <div class="form-text">Use this only if you are the admin of this browser's data.</div>
                   </form>
@@ -98,7 +98,7 @@
             <div class="card-body">
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <caption class="visually-hidden">Every shop with its stock alerts and invite codes</caption>
+                  <caption class="visually-hidden">Every shop with its stock alerts and shop logins</caption>
                   <thead>
                     <tr>
                       <th scope="col">Shop</th>
@@ -107,7 +107,7 @@
                       <th scope="col" class="text-end">Out</th>
                       <th scope="col" class="text-end">Stopped<br>selling</th>
                       <th scope="col" class="text-end">Stock value</th>
-                      <th scope="col" class="text-end">Active<br>codes</th>
+                      <th scope="col" class="text-end">Active<br>logins</th>
                     </tr>
                   </thead>
                   <tbody id="shopsBody"></tbody>
@@ -136,55 +136,62 @@
           </section>
         </div>
 
-        <!-- Create an invite code -->
+        <!-- Create a shop login -->
         <div class="col-12 col-xl-4">
-          <section class="card h-100" aria-labelledby="inviteHeading">
+          <section class="card h-100" aria-labelledby="loginHeading">
             <div class="card-header">
-              <h2 id="inviteHeading" class="h5 mb-0">Create invite code</h2>
+              <h2 id="loginHeading" class="h5 mb-0">Create shop login</h2>
             </div>
             <div class="card-body">
-              <form id="inviteForm" novalidate>
-                <div id="inviteErrors" class="alert alert-danger d-none" role="alert"></div>
+              <form id="accountForm" novalidate>
+                <div id="accountErrors" class="alert alert-danger d-none" role="alert"></div>
                 <div class="mb-3">
-                  <label for="inviteShop" class="form-label">For</label>
-                  <select id="inviteShop" class="form-select" required></select>
+                  <label for="accountShop" class="form-label">For</label>
+                  <select id="accountShop" class="form-select" required></select>
                   <div class="invalid-feedback">Choose a shop.</div>
                 </div>
                 <div class="mb-3">
-                  <label for="inviteLabel" class="form-label">Name for this code</label>
-                  <input id="inviteLabel" type="text" class="form-control" required minlength="2" maxlength="60"
+                  <label for="accountLabel" class="form-label">Name for this login</label>
+                  <input id="accountLabel" type="text" class="form-control" required minlength="2" maxlength="60"
                          placeholder="e.g. Indiranagar counter" autocomplete="off">
                   <div class="invalid-feedback">2–60 characters.</div>
                   <div class="form-text">Shown to the shop after it signs in.</div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100">Generate code</button>
+                <button id="accountSubmit" type="submit" class="btn btn-primary w-100">Generate Shop ID and password</button>
               </form>
-              <div id="newCodeBox" class="new-code-box d-none mt-3" role="status" aria-live="polite">
-                <p class="small text-body-secondary mb-1">New code for <span id="newCodeFor"></span>:</p>
-                <div class="d-flex align-items-center gap-2">
-                  <code id="newCode" class="new-code"></code>
-                  <button id="copyNewCode" type="button" class="btn btn-sm btn-outline-secondary">Copy</button>
-                </div>
-                <p class="small text-body-secondary mt-2 mb-0">Give this code to the shop. It works until you revoke it.</p>
+              <div id="newLoginBox" class="new-code-box d-none mt-3" role="status" aria-live="polite">
+                <p id="newLoginTitle" class="small text-body-secondary mb-2"></p>
+                <dl class="login-pair mb-2">
+                  <dt>Shop ID</dt>
+                  <dd><code id="newLoginId" class="new-code"></code>
+                    <button id="copyLoginId" type="button" class="btn btn-sm btn-outline-secondary">Copy</button></dd>
+                  <dt>Password</dt>
+                  <dd><code id="newLoginPassword" class="new-code"></code>
+                    <button id="copyLoginPassword" type="button" class="btn btn-sm btn-outline-secondary">Copy</button></dd>
+                </dl>
+                <p class="small text-body-secondary mb-0">
+                  The password is shown <strong>only this once</strong>; it is not stored. Give both to the shop.
+                  If it is lost, use <em>Reset password</em>.
+                </p>
               </div>
             </div>
           </section>
         </div>
 
-        <!-- All invite codes -->
+        <!-- All shop logins -->
         <div class="col-12">
-          <section class="card" aria-labelledby="codesHeading">
+          <section class="card" aria-labelledby="loginsHeading">
             <div class="card-header d-flex align-items-center justify-content-between">
-              <h2 id="codesHeading" class="h5 mb-0">Invite codes</h2>
-              <span id="codeCount" class="badge text-bg-secondary">0</span>
+              <h2 id="loginsHeading" class="h5 mb-0">Shop logins</h2>
+              <span id="loginCount" class="badge text-bg-secondary">0</span>
             </div>
             <div class="card-body">
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <caption class="visually-hidden">Every invite code, who it is for and whether it still works</caption>
+                  <caption class="visually-hidden">Every shop login, who it is for and whether it is active</caption>
                   <thead>
                     <tr>
-                      <th scope="col">Code</th>
+                      <th scope="col">Shop ID</th>
                       <th scope="col">For</th>
                       <th scope="col">Name</th>
                       <th scope="col">Created</th>
@@ -193,7 +200,7 @@
                       <th scope="col" class="text-end">Actions</th>
                     </tr>
                   </thead>
-                  <tbody id="codesBody"></tbody>
+                  <tbody id="loginsBody"></tbody>
                 </table>
               </div>
             </div>
@@ -206,7 +213,7 @@
             <div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
               <div>
                 <h2 id="resetHeading" class="h6 mb-1">Reset demo data</h2>
-                <p class="small text-body-secondary mb-0">Restores the sample stock and deletes every shop you added and every invite code. Shops are signed out.</p>
+                <p class="small text-body-secondary mb-0">Restores the sample stock and deletes every shop you added and every shop login. Shops are signed out.</p>
               </div>
               <button id="resetBtn" type="button" class="btn btn-outline-danger">Reset data</button>
             </div>

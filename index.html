@@ -44,7 +44,8 @@
 
   <main id="main" class="container-fluid py-3">
 
-    <!-- Shop sign-in with an invite code (R6). The code is kept in sessionStorage for this tab only. -->
+    <!-- Shop sign-in with the Shop ID and password from head office (R6).
+         The signed-in login is kept in sessionStorage for this tab only. -->
     <section id="signInScreen" class="d-none" aria-labelledby="signInHeading">
       <div class="row justify-content-center">
         <div class="col-12 col-md-8 col-lg-5">
@@ -52,17 +53,26 @@
             <div class="card-body">
               <h1 id="signInHeading" class="h4">Shop sign in</h1>
               <p class="text-body-secondary small mb-3">
-                Enter the invite code your head office gave your shop.
+                Use the Shop ID and password your head office gave your shop.
               </p>
               <form id="signInForm" novalidate>
                 <div id="signInErrors" class="alert alert-danger d-none" role="alert"></div>
-                <label for="inviteCode" class="form-label">Invite code</label>
-                <input id="inviteCode" type="text" class="form-control form-control-lg invite-input" required
-                       placeholder="ABCD-EFGH-JKLM" autocomplete="off" autocapitalize="characters" spellcheck="false"
-                       pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" aria-describedby="inviteHelp">
-                <div class="invalid-feedback">Enter the 12-character code, for example ABCD-EFGH-JKLM.</div>
-                <p id="inviteHelp" class="form-text mb-3">Dashes and capital letters are optional.</p>
-                <button type="submit" class="btn btn-primary w-100">Sign in</button>
+                <div class="mb-3">
+                  <label for="loginId" class="form-label">Shop ID</label>
+                  <input id="loginId" type="text" class="form-control" required minlength="3" maxlength="32"
+                         autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="e.g. koramangala">
+                  <div class="invalid-feedback">Enter your Shop ID.</div>
+                </div>
+                <div class="mb-3">
+                  <label for="loginPassword" class="form-label">Password</label>
+                  <div class="input-group has-validation">
+                    <input id="loginPassword" type="password" class="form-control" required maxlength="128"
+                           autocomplete="current-password" spellcheck="false">
+                    <button id="togglePassword" type="button" class="btn btn-outline-secondary" aria-controls="loginPassword" aria-pressed="false">Show</button>
+                    <div class="invalid-feedback">Enter your password.</div>
+                  </div>
+                </div>
+                <button id="signInSubmit" type="submit" class="btn btn-primary w-100">Sign in</button>
               </form>
             </div>
           </div>

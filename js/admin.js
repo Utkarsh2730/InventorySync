@@ -1,46 +1,42 @@
 // admin.js: the head-office admin page. Sign in with a passcode, add shops,
-// create and revoke invite codes, and see every shop at a glance.
+// create shop logins (Shop ID + password), reset or disable them, and see
+// every shop at a glance.
 //
 // Like app.js, it changes data only through rules in inventory.js
-// (createInvite, revokeInvite, addStore), which check can() first.
+// (createAccount, resetAccountPassword, setAccountDisabled, addStore), which
+// check can() first.
 //
 // Limits of a browser-only demo (there is no server):
-// - Data, invite codes and the passcode live in this browser's storage, so a
-//   code works only in the browser where it was created.
-// - The passcode is stored as a salted PBKDF2 hash, never as typed, but
-//   anyone with access to this browser's developer tools can change stored
-//   data. Real accounts need the pilot's server-side sign-in (R11).
+// - Data, shop logins and the passcode live in this browser's storage, so a
+//   login works only in the browser where it was created.
+// - Passwords and the passcode are stored as salted PBKDF2 hashes, never as
+//   typed, but anyone with access to this browser's developer tools can
+//   change stored data. Real accounts need the pilot's server-side sign-in (R11).
 
-import { createInvite, revokeInvite, revokeAllInvites, addStore, summarize, findStore, findInvite } from './inventory.js';
+import {
+  createAccount,
+  resetAccountPassword,
+  setAccountDisabled,
+  disableAllAccounts,
+  suggestLoginId,
+  addStore,
+  summarize,
+  findStore,
+} from './inventory.js';
 import * as store from './store.js';
 import { inr, $, h, showBanner, toast, showErrors, hideErrors, initTheme, formatTime } from './ui.js';
+import { isCryptoAvailable, hashSecret, newSalt, toBase64, fromBase64, generatePassword, makePasswordRecord, PASSWORD_ITERATIONS } from './crypto.js';
 
 const AUTH_KEY = 'inventorysync:admin'; // localStorage: { salt, hash, iterations }
 const SESSION_KEY = 'inventorysync:adminSession'; // sessionStorage: signed in for this tab
 const ADMIN = { id: 'admin', name: 'Admin', role: 'admin', storeId: null };
-const ITERATIONS = 150000;
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I to misread
 
 let state = null;
 let signedIn = false;
 
 // ---------------------------------------------------------------------------
-// Passcode (PBKDF2 with a random salt, via the browser's Web Crypto API)
+// Admin passcode (PBKDF2 with a random salt)
 // ---------------------------------------------------------------------------
-
-function toBase64(bytes) {
-  return btoa(String.fromCharCode(...bytes));
-}
-
-function fromBase64(text) {
-  return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
-}
-
-async function hashPasscode(passcode, salt, iterations) {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(passcode), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
-  return toBase64(new Uint8Array(bits));
-}
 
 function readAuth() {
   try {
@@ -67,17 +63,6 @@ function writeSession(auth) {
   } catch {
     // sessionStorage blocked: sign in again after a refresh
   }
-}
-
-// ---------------------------------------------------------------------------
-// Invite codes: 12 random characters, shown as ABCD-EFGH-JKLM
-// ---------------------------------------------------------------------------
-
-function newInviteCode() {
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  // 256 is a multiple of 32, so "byte % 32" picks every letter equally often.
-  const chars = [...bytes].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
-  return `${chars.slice(0, 4)}-${chars.slice(4, 8)}-${chars.slice(8)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,9 +94,13 @@ function runAdminWrite(apply, { errorBox, success }) {
 // Rendering
 // ---------------------------------------------------------------------------
 
-function storeLabel(invite) {
-  if (invite.role === 'buyer') return 'Head office (all shops)';
-  const s = findStore(state, invite.storeId);
+function accountsOf() {
+  return Array.isArray(state.accounts) ? state.accounts : [];
+}
+
+function storeLabel(account) {
+  if (account.role === 'buyer') return 'Head office (all shops)';
+  const s = findStore(state, account.storeId);
   return s ? s.name : 'Removed shop';
 }
 
@@ -124,15 +113,15 @@ function render() {
     return;
   }
   renderShops();
-  renderInviteShopSelect();
-  renderCodes();
+  renderAccountShopSelect();
+  renderAccounts();
 }
 
 function renderLogin() {
   const setup = !readAuth();
   $('adminLoginHeading').textContent = setup ? 'Set up the admin passcode' : 'Admin sign in';
   $('adminLoginHelp').textContent = setup
-    ? 'This is the first visit to the admin page in this browser. Choose a passcode of at least 8 characters and keep it safe: it cannot be recovered.'
+    ? 'This is the first visit to the admin page in this browser. Choose a passcode of at least 8 characters and keep it safe.'
     : 'Enter the admin passcode.';
   $('confirmWrap').classList.toggle('d-none', !setup);
   $('forgotWrap').classList.toggle('d-none', setup);
@@ -146,11 +135,10 @@ function renderLogin() {
 }
 
 function renderShops() {
-  const invites = Array.isArray(state.invites) ? state.invites : [];
   $('shopCount').textContent = String(state.stores.length);
   $('shopsBody').replaceChildren(...state.stores.map((s) => {
     const sum = summarize(state, s.id);
-    const activeCodes = invites.filter((i) => !i.revoked && i.storeId === s.id).length;
+    const active = accountsOf().filter((a) => !a.disabled && a.storeId === s.id).length;
     return h('tr', {},
       h('td', { class: 'fw-semibold' }, s.name),
       h('td', {}, s.city || '—'),
@@ -158,14 +146,12 @@ function renderShops() {
       h('td', { class: 'text-end qty-cell' }, sum.out),
       h('td', { class: 'text-end qty-cell' }, sum.stopped),
       h('td', { class: 'text-end qty-cell' }, inr.format(sum.stockValue)),
-      h('td', { class: 'text-end qty-cell' }, activeCodes === 0
-        ? h('span', { class: 'text-danger' }, '0')
-        : activeCodes));
+      h('td', { class: 'text-end qty-cell' }, active === 0 ? h('span', { class: 'text-danger' }, '0') : active));
   }));
 }
 
-function renderInviteShopSelect() {
-  const select = $('inviteShop');
+function renderAccountShopSelect() {
+  const select = $('accountShop');
   const current = select.value;
   select.replaceChildren(
     h('option', { value: '' }, 'Choose a shop…'),
@@ -174,26 +160,45 @@ function renderInviteShopSelect() {
   if ([...select.options].some((o) => o.value === current)) select.value = current;
 }
 
-function renderCodes() {
-  const invites = Array.isArray(state.invites) ? [...state.invites] : [];
-  // Active codes first, newest first.
-  invites.sort((a, b) => (a.revoked - b.revoked) || String(b.createdAt).localeCompare(String(a.createdAt)));
-  $('codeCount').textContent = String(invites.filter((i) => !i.revoked).length);
-  if (invites.length === 0) {
-    $('codesBody').replaceChildren(h('tr', {}, h('td', { colspan: '7', class: 'text-center text-body-secondary py-4' },
-      'No invite codes yet. Create one for each shop above.')));
+function renderAccounts() {
+  const accounts = [...accountsOf()];
+  // Active logins first, newest first.
+  accounts.sort((a, b) => (a.disabled - b.disabled) || String(b.createdAt).localeCompare(String(a.createdAt)));
+  $('loginCount').textContent = String(accounts.filter((a) => !a.disabled).length);
+  if (accounts.length === 0) {
+    $('loginsBody').replaceChildren(h('tr', {}, h('td', { colspan: '7', class: 'text-center text-body-secondary py-4' },
+      'No shop logins yet. Create one for each shop above.')));
     return;
   }
-  $('codesBody').replaceChildren(...invites.map((i) => h('tr', { class: i.revoked ? 'row-stopped' : null },
-    h('td', {}, h('code', { class: 'invite-code' }, i.code)),
-    h('td', {}, storeLabel(i)),
-    h('td', { class: 'product-name' }, i.label),
-    h('td', { class: 'text-nowrap small' }, formatTime(i.createdAt)),
-    h('td', { class: 'text-nowrap small' }, i.lastUsedAt ? formatTime(i.lastUsedAt) : 'Never'),
-    h('td', { class: 'text-center' }, h('span', { class: `badge status-badge ${i.revoked ? 'text-bg-secondary' : 'text-bg-success'}` }, i.revoked ? 'Revoked' : 'Active')),
-    h('td', { class: 'text-end' }, i.revoked ? null : h('div', { class: 'btn-group btn-group-sm row-actions', role: 'group', 'aria-label': `Actions for code ${i.code}` },
-      h('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-copy': i.code, 'aria-label': `Copy code ${i.code}` }, 'Copy'),
-      h('button', { type: 'button', class: 'btn btn-outline-danger', 'data-revoke': i.code, 'aria-label': `Revoke code ${i.code}` }, 'Revoke'))))));
+  $('loginsBody').replaceChildren(...accounts.map((a) => h('tr', { class: a.disabled ? 'row-stopped' : null },
+    h('td', {}, h('code', { class: 'login-id' }, a.loginId)),
+    h('td', {}, storeLabel(a)),
+    h('td', { class: 'product-name' }, a.label),
+    h('td', { class: 'text-nowrap small' }, formatTime(a.createdAt)),
+    h('td', { class: 'text-nowrap small' }, a.lastUsedAt ? formatTime(a.lastUsedAt) : 'Never'),
+    h('td', { class: 'text-center' }, h('span', { class: `badge status-badge ${a.disabled ? 'text-bg-secondary' : 'text-bg-success'}` }, a.disabled ? 'Disabled' : 'Active')),
+    h('td', { class: 'text-end' }, h('div', { class: 'btn-group btn-group-sm row-actions', role: 'group', 'aria-label': `Actions for ${a.loginId}` },
+      h('button', { type: 'button', class: 'btn btn-outline-secondary', 'data-reset': a.loginId, 'aria-label': `Reset password for ${a.loginId}` }, 'Reset password'),
+      a.disabled
+        ? h('button', { type: 'button', class: 'btn btn-outline-success', 'data-enable': a.loginId, 'aria-label': `Enable ${a.loginId}` }, 'Enable')
+        : h('button', { type: 'button', class: 'btn btn-outline-danger', 'data-disable': a.loginId, 'aria-label': `Disable ${a.loginId}` }, 'Disable'))))));
+}
+
+// Show a Shop ID and its new password once, with Copy buttons.
+function showNewLogin(title, loginId, password) {
+  $('newLoginTitle').textContent = title;
+  $('newLoginId').textContent = loginId;
+  $('newLoginPassword').textContent = password;
+  $('copyLoginId').dataset.copy = loginId;
+  $('copyLoginPassword').dataset.copy = password;
+  $('newLoginBox').classList.remove('d-none');
+  $('copyLoginId').focus();
+}
+
+function hideNewLogin() {
+  $('newLoginBox').classList.add('d-none');
+  $('newLoginPassword').textContent = '';
+  $('copyLoginPassword').dataset.copy = '';
 }
 
 // ---------------------------------------------------------------------------
@@ -212,13 +217,13 @@ async function onLoginSubmit(event) {
 
   try {
     if (setup) {
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      const auth = { salt: toBase64(salt), hash: await hashPasscode(passcode, salt, ITERATIONS), iterations: ITERATIONS };
+      const salt = newSalt();
+      const auth = { salt: toBase64(salt), hash: await hashSecret(passcode, salt, PASSWORD_ITERATIONS), iterations: PASSWORD_ITERATIONS };
       localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
       writeSession(auth);
     } else {
       const auth = readAuth();
-      const hash = await hashPasscode(passcode, fromBase64(auth.salt), auth.iterations || ITERATIONS);
+      const hash = await hashSecret(passcode, fromBase64(auth.salt), auth.iterations || PASSWORD_ITERATIONS);
       if (hash !== auth.hash) {
         showErrors('adminLoginErrors', ['That passcode is not right.']);
         $('adminPasscode').select();
@@ -237,7 +242,7 @@ async function onLoginSubmit(event) {
   render();
 }
 
-// Forgotten passcode: revoke every invite code, forget the passcode, and go
+// Forgotten passcode: disable every shop login, forget the passcode, and go
 // back to "Set up the admin passcode".
 function onForgotSubmit(event) {
   event.preventDefault();
@@ -249,7 +254,7 @@ function onForgotSubmit(event) {
   }
   const latest = store.readLatest();
   if (latest) state = latest;
-  const result = revokeAllInvites(state);
+  const result = disableAllAccounts(state);
   const saved = store.save(result.state);
   if (!saved.ok) {
     showErrors('forgotErrors', [saved.error]);
@@ -268,13 +273,14 @@ function onForgotSubmit(event) {
   hideErrors('adminLoginErrors');
   signedIn = false;
   render();
-  showBanner(`Passcode cleared and ${result.revoked} invite code${result.revoked === 1 ? '' : 's'} revoked. Set a new passcode, then create new codes for each shop.`, 'info');
+  showBanner(`Passcode cleared and ${result.disabled} shop login${result.disabled === 1 ? '' : 's'} disabled. Set a new passcode, then enable each login again or reset its password.`, 'info');
   $('adminPasscode').focus();
 }
 
 function signOut() {
   writeSession(null);
   signedIn = false;
+  hideNewLogin();
   render();
   $('adminPasscode').focus();
 }
@@ -287,60 +293,96 @@ function onAddShop(event) {
   const input = { name: $('shopName').value, city: $('shopCity').value };
   const done = runAdminWrite((s) => addStore(s, ADMIN, input), {
     errorBox: 'addShopErrors',
-    success: `Added shop ${input.name.trim()}. Create an invite code for it.`,
+    success: `Added shop ${input.name.trim()}. Create a login for it.`,
   });
   if (done) {
     form.reset();
     form.classList.remove('was-validated');
-    $('inviteShop').value = done.storeId;
-    $('inviteLabel').focus();
+    $('accountShop').value = done.storeId;
+    fillDefaultLabel();
+    $('accountLabel').focus();
   }
 }
 
-function onCreateInvite(event) {
+// Suggest a name for the login from the chosen shop, unless one was typed.
+function fillDefaultLabel() {
+  const input = $('accountLabel');
+  if (input.value.trim() && !input.dataset.auto) return;
+  const storeId = $('accountShop').value;
+  const s = findStore(state, storeId);
+  input.value = storeId === 'all' ? 'Head office' : (s ? `${s.name} shop` : '');
+  input.dataset.auto = '1';
+}
+
+async function onCreateAccount(event) {
   event.preventDefault();
   const form = event.currentTarget;
   form.classList.add('was-validated');
   if (!form.checkValidity()) return;
-  const storeId = $('inviteShop').value;
-  const label = $('inviteLabel').value;
-  // A clash with an existing code is very unlikely; if it happens, draw again.
-  let code = newInviteCode();
-  while (findInvite(store.readLatest() || state, code)) code = newInviteCode();
-  const done = runAdminWrite((s) => createInvite(s, ADMIN, { code, storeId, label, now: new Date().toISOString() }), {
-    errorBox: 'inviteErrors',
-    success: `Invite code ${code} created.`,
-  });
-  if (!done) return;
-  $('newCode').textContent = code;
-  $('newCodeFor').textContent = storeLabel(done.state.invites.find((i) => i.code === code));
-  $('newCodeBox').classList.remove('d-none');
-  $('copyNewCode').dataset.copy = code;
-  form.reset();
-  form.classList.remove('was-validated');
-  $('copyNewCode').focus();
-}
-
-async function copyCode(code) {
+  const storeId = $('accountShop').value;
+  const label = $('accountLabel').value;
+  const submit = $('accountSubmit');
+  submit.disabled = true;
   try {
-    await navigator.clipboard.writeText(code);
-    toast(`Copied ${code}.`);
-  } catch {
-    toast(`Copy did not work here. Select the code and copy it: ${code}`, 'danger');
+    const password = generatePassword();
+    const record = await makePasswordRecord(password); // hashing takes a moment
+    const latest = store.readLatest();
+    if (latest) state = latest;
+    const loginId = suggestLoginId(state, storeId);
+    const done = runAdminWrite((s) => createAccount(s, ADMIN, { loginId, storeId, label, password: record, now: new Date().toISOString() }), {
+      errorBox: 'accountErrors',
+      success: `Shop login ${loginId} created.`,
+    });
+    if (!done) return;
+    form.reset();
+    form.classList.remove('was-validated');
+    delete $('accountLabel').dataset.auto;
+    showNewLogin(`New login for ${storeId === 'all' ? 'Head office (all shops)' : findStore(state, storeId).name}:`, loginId, password);
+  } catch (err) {
+    showErrors('accountErrors', [`Could not create the login: ${err.message}`]);
+  } finally {
+    submit.disabled = false;
   }
 }
 
-function onRevoke(code) {
-  if (!window.confirm(`Revoke invite code ${code}? A shop signed in with it is signed out straight away.`)) return;
-  runAdminWrite((s) => revokeInvite(s, ADMIN, code), { errorBox: 'inviteErrors', success: `Code ${code} revoked.` });
+async function onResetPassword(loginId) {
+  if (!window.confirm(`Make a new password for ${loginId}? The old password stops working and the shop is signed out.`)) return;
+  try {
+    const password = generatePassword();
+    const record = await makePasswordRecord(password);
+    const done = runAdminWrite((s) => resetAccountPassword(s, ADMIN, loginId, record), {
+      errorBox: 'accountErrors',
+      success: `New password made for ${loginId}.`,
+    });
+    if (done) showNewLogin(`New password for ${loginId}:`, loginId, password);
+  } catch (err) {
+    showErrors('accountErrors', [`Could not reset the password: ${err.message}`]);
+  }
+}
+
+function onSetDisabled(loginId, disabled) {
+  if (disabled && !window.confirm(`Disable ${loginId}? The shop is signed out straight away and cannot sign in until you enable it again.`)) return;
+  runAdminWrite((s) => setAccountDisabled(s, ADMIN, loginId, disabled), {
+    errorBox: 'accountErrors',
+    success: disabled ? `${loginId} disabled.` : `${loginId} enabled.`,
+  });
+}
+
+async function copyText(text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`Copied the ${what}.`);
+  } catch {
+    toast(`Copy did not work here. Select the ${what} and copy it by hand.`, 'danger');
+  }
 }
 
 async function onReset() {
-  if (!window.confirm('Reset all data to the sample? Every shop you added and every invite code will be deleted, and shops will be signed out.')) return;
+  if (!window.confirm('Reset all data to the sample? Every shop you added and every shop login will be deleted, and shops will be signed out.')) return;
   try {
     const { state: fresh, notice } = await store.reset();
     state = fresh;
-    $('newCodeBox').classList.add('d-none');
+    hideNewLogin();
     render();
     if (notice) showBanner(notice);
     else toast('Sample data restored.');
@@ -361,13 +403,18 @@ function bindEvents() {
   $('forgotForm').addEventListener('submit', onForgotSubmit);
   $('adminSignOut').addEventListener('click', signOut);
   $('addShopForm').addEventListener('submit', onAddShop);
-  $('inviteForm').addEventListener('submit', onCreateInvite);
-  $('copyNewCode').addEventListener('click', (e) => copyCode(e.currentTarget.dataset.copy));
-  $('codesBody').addEventListener('click', (e) => {
-    const copy = e.target.closest('[data-copy]');
-    if (copy) copyCode(copy.dataset.copy);
-    const revoke = e.target.closest('[data-revoke]');
-    if (revoke) onRevoke(revoke.dataset.revoke);
+  $('accountShop').addEventListener('change', fillDefaultLabel);
+  $('accountLabel').addEventListener('input', (e) => delete e.currentTarget.dataset.auto);
+  $('accountForm').addEventListener('submit', onCreateAccount);
+  $('copyLoginId').addEventListener('click', (e) => copyText(e.currentTarget.dataset.copy, 'Shop ID'));
+  $('copyLoginPassword').addEventListener('click', (e) => copyText(e.currentTarget.dataset.copy, 'password'));
+  $('loginsBody').addEventListener('click', (e) => {
+    const reset = e.target.closest('[data-reset]');
+    if (reset) onResetPassword(reset.dataset.reset);
+    const disable = e.target.closest('[data-disable]');
+    if (disable) onSetDisabled(disable.dataset.disable, true);
+    const enable = e.target.closest('[data-enable]');
+    if (enable) onSetDisabled(enable.dataset.enable, false);
   });
   $('resetBtn').addEventListener('click', onReset);
 }
@@ -375,7 +422,7 @@ function bindEvents() {
 async function start() {
   window.inventorySyncAdminStarted = true; // read by the safety-net script in admin.html
   initTheme();
-  if (!window.crypto || !crypto.subtle) {
+  if (!isCryptoAvailable()) {
     showBanner('This browser cannot run the admin page securely here. Open it over https or from localhost.', 'danger');
     return;
   }

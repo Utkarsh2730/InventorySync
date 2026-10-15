@@ -288,7 +288,7 @@ export default function App() {
             <SummaryCards summary={summary} scopeName={scopeName} />
 
             <div className="row g-3">
-              <div className="col-12 col-lg-8">
+              <div className="col-12 col-lg-9 main-panel">
                 <section className="card" aria-labelledby="stockHeading">
                   <div className="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
                     <h2 id="stockHeading" className="h5 mb-0">Stock by store</h2>
@@ -318,7 +318,7 @@ export default function App() {
                 </section>
               </div>
 
-              <div className="col-12 col-lg-4 side-panel">
+              <div className="col-12 col-lg-3 side-panel">
                 <AlertPanel alerts={alerts} scopeName={scopeName} />
                 {canSell && (
                   <Cart

@@ -257,17 +257,18 @@ function renderStoreFilter() {
 
 function statusBadge(status) {
   const cls = { OK: 'text-bg-success', Low: 'text-bg-warning', Out: 'text-bg-danger' }[status];
-  return h('span', { class: `badge ${cls}` }, status);
+  return h('span', { class: `badge status-badge ${cls}` }, status);
 }
 
-function actionButton(action, label, row, style, disabled = false) {
+// label is the short text on the button; fullLabel is read out by screen readers.
+function actionButton(action, label, row, style, disabled = false, fullLabel = label) {
   return h('button', {
     type: 'button',
-    class: `btn btn-sm ${style} me-1`,
+    class: `btn ${style}`,
     'data-action': action,
     'data-store': row.storeId,
     'data-sku': row.sku,
-    'aria-label': `${label}: ${row.name} at ${row.storeName}`,
+    'aria-label': `${fullLabel}: ${row.name} at ${row.storeName}`,
     disabled,
   }, label);
 }
@@ -277,19 +278,21 @@ function rowElement(r) {
   if (can(currentUser, 'sell', r.storeId)) actions.push(actionButton('sell', 'Add to cart', r, 'btn-primary', r.qty === 0));
   if (can(currentUser, 'receive', r.storeId)) actions.push(actionButton('receive', 'Receive', r, 'btn-outline-primary'));
   if (can(currentUser, 'transfer', r.storeId)) actions.push(actionButton('transfer', 'Transfer', r, 'btn-outline-primary', r.qty === 0));
-  if (can(currentUser, 'setReorder', r.storeId)) actions.push(actionButton('reorder', 'Reorder level', r, 'btn-outline-secondary'));
+  if (can(currentUser, 'setReorder', r.storeId)) actions.push(actionButton('reorder', 'Reorder', r, 'btn-outline-secondary', false, 'Reorder level'));
 
   return h('tr', {},
     h('td', {}, r.storeName),
     h('td', {}, h('code', {}, r.sku)),
     h('td', { class: 'product-name' }, r.name),
-    h('td', { class: 'text-end d-none d-md-table-cell print-cell' }, inr.format(r.price)),
+    h('td', { class: 'text-end d-none d-xl-table-cell print-cell' }, inr.format(r.price)),
     h('td', { class: 'text-end qty-cell fw-semibold' }, r.qty),
-    h('td', { class: 'text-end qty-cell d-none d-md-table-cell print-cell' }, r.reorderLevel),
-    h('td', {}, statusBadge(r.status)),
+    h('td', { class: 'text-end qty-cell d-none d-xl-table-cell print-cell' }, r.reorderLevel),
+    h('td', { class: 'text-center' }, statusBadge(r.status)),
     h('td', { class: `text-end qty-cell chain-total-cell${showChainTotal() ? '' : ' d-none'}` }, r.chainTotal),
-    h('td', { class: 'text-end d-none d-md-table-cell print-cell' }, inr.format(r.value)),
-    h('td', { class: 'actions-cell no-print' }, actions.length ? actions : h('span', { class: 'text-body-secondary small' }, 'View only')));
+    h('td', { class: 'text-end d-none d-xl-table-cell print-cell' }, inr.format(r.value)),
+    h('td', { class: 'actions-cell no-print' }, actions.length
+      ? h('div', { class: 'btn-group btn-group-sm row-actions', role: 'group', 'aria-label': `Actions for ${r.name} at ${r.storeName}` }, actions)
+      : h('span', { class: 'text-body-secondary small' }, 'View only')));
 }
 
 function renderTable() {

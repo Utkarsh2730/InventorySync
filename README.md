@@ -188,7 +188,7 @@ Start with **Reset data** so you begin from the sample.
 | R5 | Low/Out alerts update immediately | `statusOf()`, `alertsOf()`, `summarize()`; `renderAlerts()` / `renderCards()` | Test “Status …”, “R5”; demo step 8 |
 | R6 | Role-based permissions | `can()` first in every write function; sign-in in `app.js` (sessionStorage) | Tests “R6 …”; demo steps 1, 8, 9 |
 | R7 | Persistence, sample data, reset | `load()`, `save()`, `reset()` in `store.js`; `data/sample-data.json` | Demo step 11 |
-| R8 | 1366 px and 375 px, no sideways scroll | Bootstrap grid (`col-12 col-sm-6 col-xl-3`), `table-responsive`, `offcanvas-lg` cart, `min-width:0` / `overflow-wrap` in `css/style.css` | Demo step 15 |
+| R8 | 1366 px and 375 px, no sideways scroll | Bootstrap grid (`col-12 col-sm-6 col-lg-3` cards, `col-lg-9` / `col-lg-3` columns), `table-responsive` scroll box, `offcanvas-lg` cart, `min-width:0` / `overflow-wrap` in `css/style.css` | Demo step 15 |
 | R9 | Search and filters | `filterRows()` in `inventory.js`; input group + selects in `index.html` | Test “R9”; demo step 12 |
 | R10 | CSV export, PDF via print | `js/export.js` (`rowsToCsv`, `downloadRowsAsCsv`); `@media print` in `style.css` | Tests “R10”; demo steps 13–14 |
 | Stretch | React 19.3 + Vite 8.3 reusing `inventory.js` | `react/` (source), `react-app/` (build); imports `../js/inventory.js` unchanged | Demo step 18 |

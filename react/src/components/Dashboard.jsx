@@ -2,7 +2,7 @@ import { can } from '../../../js/inventory.js';
 import { BADGE_CLASS, inr } from '../format.js';
 
 export function StatusBadge({ status }) {
-  return <span className={`badge ${BADGE_CLASS[status]}`}>{status}</span>;
+  return <span className={`badge status-badge ${BADGE_CLASS[status]}`}>{status}</span>;
 }
 
 export function SignIn({ users, storeName, onSignIn }) {
@@ -38,25 +38,25 @@ export function SummaryCards({ summary, scopeName }) {
     <>
     <h2 className="h6 text-body-secondary mb-2">Summary · <span id="summaryScope">{scopeName}</span></h2>
     <section className="row g-3 mb-3" aria-labelledby="summaryScope">
-      <div className="col-12 col-sm-6 col-xl-3">
+      <div className="col-12 col-sm-6 col-lg-3">
         <div className="card h-100"><div className="card-body">
           <p className="small text-body-secondary mb-1">Products</p>
           <p className="h3 mb-0">{summary.totalSkus}</p>
         </div></div>
       </div>
-      <div className="col-12 col-sm-6 col-xl-3">
+      <div className="col-12 col-sm-6 col-lg-3">
         <div className="card h-100 border-warning"><div className="card-body">
           <p className="small text-body-secondary mb-1">Low stock items</p>
           <p className="h3 mb-0">{summary.low} <span className="badge text-bg-warning align-middle fs-6">Low</span></p>
         </div></div>
       </div>
-      <div className="col-12 col-sm-6 col-xl-3">
+      <div className="col-12 col-sm-6 col-lg-3">
         <div className="card h-100 border-danger"><div className="card-body">
           <p className="small text-body-secondary mb-1">Out of stock items</p>
           <p className="h3 mb-0">{summary.out} <span className="badge text-bg-danger align-middle fs-6">Out</span></p>
         </div></div>
       </div>
-      <div className="col-12 col-sm-6 col-xl-3">
+      <div className="col-12 col-sm-6 col-lg-3">
         <div className="card h-100"><div className="card-body">
           <p className="small text-body-secondary mb-1">Stock value</p>
           <p className="h3 mb-0">{inr.format(summary.stockValue)}</p>
@@ -104,9 +104,10 @@ export function Filters({ stores, filters, onChange }) {
 // Buttons appear only when can() allows them. That is a convenience: the rule
 // functions call can() again and refuse anyway.
 function RowActions({ user, row, onAction }) {
-  const btn = (action, label, style, disabled = false) => (
-    <button key={action} type="button" className={`btn btn-sm ${style} me-1`} disabled={disabled}
-      aria-label={`${label}: ${row.name} at ${row.storeName}`} onClick={() => onAction(action, row.storeId, row.sku)}>
+  // label is the short button text; fullLabel is read out by screen readers.
+  const btn = (action, label, style, disabled = false, fullLabel = label) => (
+    <button key={action} type="button" className={`btn ${style}`} disabled={disabled}
+      aria-label={`${fullLabel}: ${row.name} at ${row.storeName}`} onClick={() => onAction(action, row.storeId, row.sku)}>
       {label}
     </button>
   );
@@ -114,8 +115,13 @@ function RowActions({ user, row, onAction }) {
   if (can(user, 'sell', row.storeId)) buttons.push(btn('sell', 'Add to cart', 'btn-primary', row.qty === 0));
   if (can(user, 'receive', row.storeId)) buttons.push(btn('receive', 'Receive', 'btn-outline-primary'));
   if (can(user, 'transfer', row.storeId)) buttons.push(btn('transfer', 'Transfer', 'btn-outline-primary', row.qty === 0));
-  if (can(user, 'setReorder', row.storeId)) buttons.push(btn('reorder', 'Reorder level', 'btn-outline-secondary'));
-  return buttons.length ? buttons : <span className="text-body-secondary small">View only</span>;
+  if (can(user, 'setReorder', row.storeId)) buttons.push(btn('reorder', 'Reorder', 'btn-outline-secondary', false, 'Reorder level'));
+  if (buttons.length === 0) return <span className="text-body-secondary small">View only</span>;
+  return (
+    <div className="btn-group btn-group-sm row-actions" role="group" aria-label={`Actions for ${row.name} at ${row.storeName}`}>
+      {buttons}
+    </div>
+  );
 }
 
 export function StockTable({ rows, user, onAction, showChainTotal }) {
@@ -128,12 +134,12 @@ export function StockTable({ rows, user, onAction, showChainTotal }) {
             <th scope="col">Store</th>
             <th scope="col">SKU</th>
             <th scope="col">Product</th>
-            <th scope="col" className="text-end d-none d-md-table-cell print-cell">Price</th>
+            <th scope="col" className="text-end d-none d-xl-table-cell print-cell">Price</th>
             <th scope="col" className="text-end">Qty</th>
-            <th scope="col" className="text-end d-none d-md-table-cell print-cell">Reorder at</th>
-            <th scope="col">Status</th>
-            {showChainTotal && <th scope="col" className="text-end">All stores total</th>}
-            <th scope="col" className="text-end d-none d-md-table-cell print-cell">Value</th>
+            <th scope="col" className="text-end d-none d-xl-table-cell print-cell">Reorder<br />level</th>
+            <th scope="col" className="text-center">Status</th>
+            {showChainTotal && <th scope="col" className="text-end">All stores<br />total</th>}
+            <th scope="col" className="text-end d-none d-xl-table-cell print-cell">Value</th>
             <th scope="col" className="no-print">Actions</th>
           </tr>
         </thead>
@@ -146,12 +152,12 @@ export function StockTable({ rows, user, onAction, showChainTotal }) {
               <td>{r.storeName}</td>
               <td><code>{r.sku}</code></td>
               <td className="product-name">{r.name}</td>
-              <td className="text-end d-none d-md-table-cell print-cell">{inr.format(r.price)}</td>
+              <td className="text-end d-none d-xl-table-cell print-cell">{inr.format(r.price)}</td>
               <td className="text-end qty-cell fw-semibold">{r.qty}</td>
-              <td className="text-end qty-cell d-none d-md-table-cell print-cell">{r.reorderLevel}</td>
-              <td><StatusBadge status={r.status} /></td>
+              <td className="text-end qty-cell d-none d-xl-table-cell print-cell">{r.reorderLevel}</td>
+              <td className="text-center"><StatusBadge status={r.status} /></td>
               {showChainTotal && <td className="text-end qty-cell">{r.chainTotal}</td>}
-              <td className="text-end d-none d-md-table-cell print-cell">{inr.format(r.value)}</td>
+              <td className="text-end d-none d-xl-table-cell print-cell">{inr.format(r.value)}</td>
               <td className="actions-cell no-print"><RowActions user={user} row={r} onAction={onAction} /></td>
             </tr>
           ))}

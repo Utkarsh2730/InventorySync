@@ -75,25 +75,25 @@
       <!-- Summary cards: stack to one column at phone width (R8). They follow the Store filter. -->
       <h2 class="h6 text-body-secondary mb-2">Summary · <span id="summaryScope">All stores</span></h2>
       <section class="row g-3 mb-3" aria-labelledby="summaryScope">
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-12 col-sm-6 col-lg-3">
           <div class="card h-100"><div class="card-body">
             <p class="small text-body-secondary mb-1">Products</p>
             <p id="cardSkus" class="h3 mb-0">0</p>
           </div></div>
         </div>
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-12 col-sm-6 col-lg-3">
           <div class="card h-100 border-warning"><div class="card-body">
             <p class="small text-body-secondary mb-1">Low stock items</p>
             <p class="h3 mb-0"><span id="cardLow">0</span> <span class="badge text-bg-warning align-middle fs-6">Low</span></p>
           </div></div>
         </div>
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-12 col-sm-6 col-lg-3">
           <div class="card h-100 border-danger"><div class="card-body">
             <p class="small text-body-secondary mb-1">Out of stock items</p>
             <p class="h3 mb-0"><span id="cardOut">0</span> <span class="badge text-bg-danger align-middle fs-6">Out</span></p>
           </div></div>
         </div>
-        <div class="col-12 col-sm-6 col-xl-3">
+        <div class="col-12 col-sm-6 col-lg-3">
           <div class="card h-100"><div class="card-body">
             <p class="small text-body-secondary mb-1">Stock value</p>
             <p id="cardValue" class="h3 mb-0">₹0</p>
@@ -103,7 +103,7 @@
 
       <div class="row g-3">
         <!-- Stock table (R2, R9, R10) -->
-        <div class="col-12 col-lg-8">
+        <div class="col-12 col-lg-9 main-panel">
           <section class="card" aria-labelledby="stockHeading">
             <div class="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
               <h2 id="stockHeading" class="h5 mb-0">Stock by store</h2>
@@ -150,12 +150,12 @@
                       <th scope="col">Store</th>
                       <th scope="col">SKU</th>
                       <th scope="col">Product</th>
-                      <th scope="col" class="text-end d-none d-md-table-cell print-cell">Price</th>
+                      <th scope="col" class="text-end d-none d-xl-table-cell print-cell">Price</th>
                       <th scope="col" class="text-end">Qty</th>
-                      <th scope="col" class="text-end d-none d-md-table-cell print-cell">Reorder at</th>
-                      <th scope="col">Status</th>
-                      <th scope="col" class="text-end chain-total-cell" id="chainTotalHead">All stores total</th>
-                      <th scope="col" class="text-end d-none d-md-table-cell print-cell">Value</th>
+                      <th scope="col" class="text-end d-none d-xl-table-cell print-cell">Reorder<br>level</th>
+                      <th scope="col" class="text-center">Status</th>
+                      <th scope="col" class="text-end chain-total-cell" id="chainTotalHead">All stores<br>total</th>
+                      <th scope="col" class="text-end d-none d-xl-table-cell print-cell">Value</th>
                       <th scope="col" class="no-print">Actions</th>
                     </tr>
                   </thead>
@@ -167,7 +167,7 @@
         </div>
 
         <!-- Alerts (R5) and cart -->
-        <div class="col-12 col-lg-4 side-panel">
+        <div class="col-12 col-lg-3 side-panel">
           <section class="card mb-3 alerts-card" aria-labelledby="alertHeading">
             <div class="card-header d-flex align-items-center justify-content-between">
               <h2 id="alertHeading" class="h5 mb-0">Alerts · <span id="alertScope">All stores</span></h2>

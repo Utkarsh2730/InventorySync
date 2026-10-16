@@ -16,6 +16,9 @@ export const DATA_VERSION = 3; // 2: products have brands, English-only names; 3
 export const STATUSES = ['OK', 'Low', 'Out', 'Stopped'];
 export const MAX_QTY = 100000; // upper bound for any single quantity or level
 export const LOG_LIMIT = 1000; // keep only the newest log entries
+export const BILL_LIMIT = 300; // keep only the newest bills (for reprinting)
+export const PAYMENT_METHODS = ['Cash', 'UPI', 'Card'];
+export const CUSTOMER_MAX = 60; // characters for the optional customer name on a bill
 
 export const ROLE_LABELS = { manager: 'Store Manager', buyer: 'Inventory Buyer', admin: 'Admin' };
 
@@ -133,14 +136,32 @@ function addLog(next, entries) {
 // R1: checkout (all or nothing)
 // ---------------------------------------------------------------------------
 
+// Money is rounded to paise so 3 × ₹0.10 prints as ₹0.30.
+function money(n) {
+  return Math.round(n * 100) / 100;
+}
+
+// Each shop numbers its own bills: KORAMANGALA-0001, KORAMANGALA-0002, ...
+// The shop ID is unique, so two shops never print the same bill number.
+function billNumber(storeId, n) {
+  return `${storeId.toUpperCase()}-${String(n).padStart(4, '0')}`;
+}
+
 // cart: [{ sku, qty }]. The caller must pass the LATEST saved state
 // (app.js re-reads saved data just before calling this), so a sale made in
 // another tab is taken into account.
-export function checkout(state, user, storeId, cart) {
+// details: { payment: 'Cash' | 'UPI' | 'Card', customer: optional name, time }.
+// A successful sale also returns the customer's bill, saved in the same write
+// so the bill number and the stock change can never get out of step.
+export function checkout(state, user, storeId, cart, details = {}) {
   if (!can(user, 'sell', storeId)) return refuse(state, [refusalMessage(state, user, 'sell', storeId)]);
 
   if (!findStore(state, storeId)) return refuse(state, [`Unknown store "${storeId}".`]);
   if (!Array.isArray(cart) || cart.length === 0) return refuse(state, ['The cart is empty.']);
+  const payment = details.payment || 'Cash';
+  const customer = String(details.customer || '').trim();
+  if (!PAYMENT_METHODS.includes(payment)) return refuse(state, [`Payment must be ${PAYMENT_METHODS.join(', ')}.`]);
+  if (customer.length > CUSTOMER_MAX) return refuse(state, [`Customer name must be at most ${CUSTOMER_MAX} characters.`]);
 
   // Add up duplicate lines for the same SKU so two lines of 2 are checked as 4.
   const errors = [];
@@ -172,13 +193,44 @@ export function checkout(state, user, storeId, cart) {
 
   // Every line passed: apply all of them to a copy.
   const next = clone(state);
+  const counters = next.billCounters || {};
+  const n = (counters[storeId] || 0) + 1;
+  next.billCounters = { ...counters, [storeId]: n };
+  const number = billNumber(storeId, n);
+
   const entries = [];
+  const lines = [];
   for (const [sku, qty] of totals) {
     next.stock[storeId][sku].qty -= qty;
-    entries.push({ type: 'sale', storeId, sku, change: -qty, userId: user.id });
+    entries.push({ type: 'sale', storeId, sku, change: -qty, userId: user.id, bill: number });
+    const p = findProduct(state, sku);
+    lines.push({ sku, name: p.name, brand: p.brand || '', qty, price: p.price, amount: money(qty * p.price) });
   }
   addLog(next, entries);
-  return { ok: true, errors: [], state: next };
+
+  const shop = findStore(state, storeId);
+  const bill = {
+    number,
+    storeId,
+    storeName: shop.name,
+    city: shop.city || '',
+    time: details.time || new Date().toISOString(),
+    soldBy: user.name,
+    customer,
+    payment,
+    lines,
+    itemCount: lines.reduce((sum, l) => sum + l.qty, 0),
+    total: money(lines.reduce((sum, l) => sum + l.amount, 0)),
+  };
+  next.bills = [...(next.bills || []), bill].slice(-BILL_LIMIT);
+  return { ok: true, errors: [], state: next, bill };
+}
+
+// The newest bill a shop printed, for "Reprint last bill" (null if none).
+export function lastBill(state, storeId) {
+  const bills = state.bills || [];
+  for (let i = bills.length - 1; i >= 0; i -= 1) if (bills[i].storeId === storeId) return bills[i];
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -699,6 +751,8 @@ export function isValidState(s) {
   for (const u of s.users) {
     if (!u || typeof u.id !== 'string' || typeof u.name !== 'string' || !ROLE_LABELS[u.role]) return false;
   }
+  if (s.bills !== undefined && !Array.isArray(s.bills)) return false;
+  if (s.billCounters !== undefined && (!s.billCounters || typeof s.billCounters !== 'object')) return false;
   if (s.accounts !== undefined) {
     if (!Array.isArray(s.accounts)) return false;
     for (const a of s.accounts) {

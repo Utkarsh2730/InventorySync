@@ -28,6 +28,8 @@ import {
   addStore,
   upgradeData,
   productLabel,
+  lastBill,
+  BILL_LIMIT,
 } from './inventory.js';
 import { generatePassword, makePasswordRecord, hashForAccount } from './crypto.js';
 import { escapeCsvCell, rowsToCsv } from './export.js';
@@ -456,6 +458,40 @@ export function runTests() {
     badAccounts.accounts = [{ loginId: 1 }];
     return isValidState(makeState()) && !isValidState(neg) && !isValidState(old) && !isValidState(null)
       && isValidState(noAccounts) && !isValidState(badAccounts);
+  });
+
+  // --- Customer bills ------------------------------------------------------
+  check('Bill: a sale returns a bill with the shop, items, brands, payment and total', () => {
+    const s = makeState();
+    s.stock.A.GHEE.qty = 5;
+    const r = checkout(s, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 2 }, { sku: 'GHEE', qty: 1 }, { sku: 'DAL', qty: 1 }],
+      { payment: 'UPI', customer: '  Ravi  ', time: '2026-10-16T06:00:00.000Z' });
+    const b = r.bill;
+    return r.ok && b.number === 'A-0001' && b.storeName === 'Store A' && b.payment === 'UPI' && b.customer === 'Ravi'
+      && b.lines.length === 2 && b.lines[0].sku === 'DAL' && b.lines[0].qty === 3 && b.lines[0].amount === 495
+      && b.lines[0].brand === 'Tata Sampann' && b.itemCount === 4 && b.total === 835 && b.soldBy === 'Manager A'
+      && r.state.log.every((e) => e.bill === 'A-0001') && lastBill(r.state, 'A') === r.state.bills[0];
+  });
+  check('Bill: numbers go up per shop; a refused sale uses no number', () => {
+    const s = makeState();
+    const a1 = checkout(s, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 1 }]);
+    const refused = checkout(a1.state, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 99 }]);
+    const a2 = checkout(refused.state, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 1 }]);
+    const b1 = checkout(a2.state, user(s, 'mB'), 'B', [{ sku: 'DAL', qty: 1 }]);
+    return !refused.ok && !refused.bill && a2.bill.number === 'A-0002' && b1.bill.number === 'B-0001'
+      && lastBill(b1.state, 'A').number === 'A-0002' && lastBill(b1.state, 'B').number === 'B-0001' && lastBill(s, 'A') === null;
+  });
+  check('Bill: unknown payment or a too-long customer name is refused; old bills are trimmed', () => {
+    const s = makeState();
+    const m = user(s, 'mA');
+    const badPay = checkout(s, m, 'A', [{ sku: 'DAL', qty: 1 }], { payment: 'Cheque' });
+    const longName = checkout(s, m, 'A', [{ sku: 'DAL', qty: 1 }], { customer: 'x'.repeat(61) });
+    const full = makeState();
+    full.stock.B.DAL.qty = 100000;
+    full.bills = Array.from({ length: BILL_LIMIT }, (_, i) => ({ number: `OLD-${i}`, storeId: 'B' }));
+    const r = checkout(full, user(full, 'mB'), 'B', [{ sku: 'DAL', qty: 1 }]);
+    return !badPay.ok && !longName.ok && s.stock.A.DAL.qty === 3 && checkout(s, m, 'A', [{ sku: 'DAL', qty: 1 }]).bill.payment === 'Cash'
+      && r.state.bills.length === BILL_LIMIT && r.state.bills[0].number === 'OLD-1' && isValidState(r.state);
   });
 
   return results;

@@ -174,6 +174,7 @@ instead of mixing old cached files with new ones.
 | `css/style.css` | Custom styles, focus outlines, scroll boxes, alignment, `@media print` stylesheet. Shared by both pages and the React build. |
 | `js/inventory.js` | Pure rules, no DOM: `statusOf`, `can`, `checkout`, `transfer`, `receive`, `setReorderLevel`, `addProduct`, `setSelling`, `createAccount`, `resetAccountPassword`, `setAccountDisabled`, `signInAccount`, `userFromSession`, `suggestLoginId`, `addStore`, `filterRows`, plus read-only views. |
 | `js/store.js` | `load`, `save`, `reset`, `readLatest`, `subscribe` (BroadcastChannel and `storage` event). |
+| `js/bill.js` | The customer's bill (shop, bill number, date, items with brands, qty, rate, amount, total, payment). Shown after each sale and printed on its own. |
 | `js/export.js` | CSV export of the filtered rows (UTF-8 BOM, proper escaping, Blob download). |
 | `js/ui.js` | Shared page helpers: safe element builder, toasts, banners, error boxes, dark mode. |
 | `js/app.js` | Shop page: draws the screen and handles clicks. |
@@ -231,6 +232,19 @@ CSV, and Search matches it. Product names and brands are kept in **English only*
 refuses other scripts, and data saved by older versions is upgraded on load (version 1 → 2:
 brands added, non-English parts of names removed).
 
+### Customer bills
+
+A shop sells and prints the bill in the same app, so the stock is always up to date:
+
+1. Add items to the cart, choose **Paid by** (Cash, UPI or Card) and, if wanted, type the **Customer** name.
+2. Click **Checkout & bill**. The stock goes down and the bill opens straight away, with **Print bill** already selected (press Enter to print).
+3. The printout contains only the bill, 80 mm wide, so it works on a receipt printer, on A4, or with **Save as PDF**.
+4. **Reprint last bill** under the cart shows the shop's newest bill again, even after a refresh.
+
+Each shop numbers its own bills: `KORAMANGALA-0001`, `KORAMANGALA-0002`, and so on. The number is saved in the
+same write as the stock change, so two tabs selling at once never get the same number. The newest 300 bills are
+kept for reprinting, and each sale in the log records its bill number. The React version does not show bills yet.
+
 ### Speed with large stock lists
 
 - Stock rows are built once per saved change and shared by the table, cards, alerts and admin page.
@@ -255,9 +269,9 @@ the same browser.
 | # | Steps | Expected |
 |---|-------|----------|
 | 1 | Shop page: sign in with the **Koramangala** Shop ID and password (try a wrong password first: "Wrong Shop ID or password"). | The Store filter starts on Koramangala: table, summary (3 Low, 1 Out) and alerts show Koramangala only. Rows have Add to cart, Receive and Stop. There is no admin option, view switch, user switcher or Reset button. A yellow reminder asks the shop to change the head-office password. |
-| 2 | **R1.** *Toor Dal 1 kg* from **Tata Sampann** has 3. Add it to the cart twice, then **Checkout**. | "Sale recorded". Qty is now 1, status Low. The 24 Mantra Organic Toor Dal is a separate row and is not affected. |
-| 3 | Add Toor Dal once, change the cart quantity to **2**, **Checkout**. | Refused: "only 1 in stock … cannot sell 2". Qty stays 1. |
-| 4 | Put a valid line and an oversized line in the cart, **Checkout**. | Whole sale refused; neither quantity changes. |
+| 2 | **R1.** *Toor Dal 1 kg* from **Tata Sampann** has 3. Add it to the cart twice, then **Checkout & bill**. | "Sale recorded". Qty is now 1, status Low. The 24 Mantra Organic Toor Dal is a separate row and is not affected. |
+| 3 | Add Toor Dal once, change the cart quantity to **2**, **Checkout & bill**. | Refused: "only 1 in stock … cannot sell 2". Qty stays 1. |
+| 4 | Put a valid line and an oversized line in the cart, **Checkout & bill**. | Whole sale refused; neither quantity changes. |
 | 5 | **R2.** Sign in with the **Head office** login. With Store = **All stores**, look at *All stores total*. | Equals the sum of that SKU across the shops. The column is hidden when one shop is selected. |
 | 6 | **R4.** Keep the Koramangala tab open. Sell an item there. | The Head office tab updates qty, cards and alerts within 1 second, with no reload. |
 | 7 | **R3.** Head office: *Cow Ghee* row for Indiranagar → **Transfer** 10 to Koramangala. | Indiranagar 25 → 15, Koramangala 0 → 10, all-stores total unchanged; the Koramangala Out alert clears. |
@@ -270,6 +284,7 @@ the same browser.
 | 14 | **R7.** Refresh any tab. | Changes and sign-ins (per tab) are kept. Admin **Reset data** restores the sample and signs every shop out. |
 | 15 | **R9.** Type `toor` in Search (name), then `saffola` (brand), then pick a Store and Status = Low. | Table narrows; "Showing N of M items" updates. Each brand of an item is its own row. |
 | 16 | **R10.** With filters on, click **Export CSV**. Open it in Excel. | Same rows as the screen, with a Brand column; `₹` displays correctly; `Biscuits, Marie "Family Pack"` stays in one cell. |
+| 17a | **Bill.** Koramangala: add two items, choose **UPI**, type a customer name, **Checkout & bill**. Click **Print bill** → Save as PDF. Close it, refresh, click **Reprint last bill**. | The bill shows `KORAMANGALA-0001`, both items with brands, rate, amount, total and "UPI". The PDF has only the bill. The stock went down at checkout. Reprint shows the same bill; the next sale is `KORAMANGALA-0002`. |
 | 17 | **Print / PDF** → Save as PDF. | Clean report: no navbar, buttons, filters or cart; header shows date and filters. |
 | 18 | **R8.** DevTools device toolbar at **375 px**, then **1366 px**. | No sideways page scroll. On laptops the page fits the screen and the table, alerts and cart scroll inside their own boxes. |
 | 19 | Toggle **Dark mode**, refresh. | Choice is remembered on both pages. |

@@ -27,8 +27,10 @@ import {
   changeOwnPassword,
   disableAllAccounts,
   productLabel,
+  lastBill,
   ADMIN_LOGIN_ID,
 } from './inventory.js';
+import { billElement } from './bill.js';
 import * as store from './store.js';
 import { downloadRowsAsCsv } from './export.js';
 import { bs, inr, $, h, showBanner, toast, showErrors, hideErrors, initTheme } from './ui.js';
@@ -64,6 +66,7 @@ const ROW_STEP = 200; // the table draws this many rows at a time; "Show more" a
 let rowLimit = ROW_STEP;
 let renderQueued = false;
 let searchTimer = 0;
+let shownBill = null; // the bill open in the Bill dialog
 let modalContext = {}; // { storeId, sku } for the modal that is open
 let modalReturnFocus = null; // where keyboard focus goes when the modal closes
 
@@ -469,6 +472,8 @@ function renderCart() {
 
   $('cartLines').replaceChildren(...lines);
   $('cartEmpty').classList.toggle('d-none', cart.size > 0);
+  $('billDetails').classList.toggle('d-none', cart.size === 0);
+  $('lastBillBtn').classList.toggle('d-none', !lastBill(state, storeId));
   $('checkoutBtn').disabled = cart.size === 0;
   $('clearCartBtn').disabled = cart.size === 0;
   updateCartTotals();
@@ -536,16 +541,47 @@ function onCheckout() {
   const lines = [...cart].map(([sku, qty]) => ({ sku, qty }));
   // checkout() checks every line against the freshly re-read stock and either
   // applies all of them or none. runWrite saves once on success.
-  const ok = runWrite((s) => checkout(s, currentUser, storeId, lines), {
+  const details = { payment: $('payMethod').value, customer: $('customerName').value };
+  const result = runWrite((s) => checkout(s, currentUser, storeId, lines, details), {
     errorBox: 'cartErrors',
     success: `Sale recorded at ${storeNameOf(storeId)}.`,
   });
-  if (ok) {
+  if (result) {
     cart.clear();
+    $('customerName').value = '';
+    $('payMethod').value = 'Cash';
     renderCart();
     const panel = bs && bs.Offcanvas.getInstance($('cartPanel'));
     if (panel) panel.hide();
+    showBill(result.bill); // the stock is already updated; the bill is ready to print
   }
+}
+
+// ---------------------------------------------------------------------------
+// Customer bill: shown after every sale, printed on its own
+// ---------------------------------------------------------------------------
+
+function showBill(bill) {
+  if (!bill) return;
+  shownBill = bill;
+  if (!bs) {
+    printBill(); // no dialogs without Bootstrap: go straight to printing
+    return;
+  }
+  $('billTitle').textContent = `Bill ${bill.number}`;
+  $('billPreview').replaceChildren(billElement(bill));
+  modalReturnFocus = { id: 'cartHeading' };
+  bs.Modal.getOrCreateInstance($('billModal')).show();
+}
+
+// Only the bill goes to the printer (style.css hides the rest while
+// body.print-bill is set). Works with a receipt printer or Save as PDF.
+function printBill() {
+  if (!shownBill) return;
+  $('billSheet').replaceChildren(billElement(shownBill));
+  document.body.classList.add('print-bill');
+  window.addEventListener('afterprint', () => document.body.classList.remove('print-bill'), { once: true });
+  window.print();
 }
 
 // ---------------------------------------------------------------------------
@@ -913,6 +949,8 @@ function signOut(message) {
   saveSession(null);
   currentUser = null;
   if (adminPanel) adminPanel.hideNewLogin(); // never leave a shown password on screen
+  closeModal('billModal'); // a shop's bill is not left open for the next person
+  shownBill = null;
   cart.clear();
   hideErrors('cartErrors');
   prepareSignInForm();
@@ -1046,7 +1084,7 @@ function bindEvents() {
   $('printBtn').addEventListener('click', () => window.print());
   // Print every matching row, not just the batch on screen, then go back.
   window.addEventListener('beforeprint', () => {
-    if (!currentUser || isAdmin()) return;
+    if (!currentUser || isAdmin() || document.body.classList.contains('print-bill')) return;
     renderPrintMeta();
     if (visibleRows.length > rowLimit) {
       rowLimit = Infinity;
@@ -1096,13 +1134,17 @@ function bindEvents() {
     $('cartHeading').focus();
   });
   $('checkoutBtn').addEventListener('click', onCheckout);
+  $('printBillBtn').addEventListener('click', printBill);
+  $('lastBillBtn').addEventListener('click', () => showBill(lastBill(state, currentUser.storeId)));
+  // Print bill is ready as soon as the dialog opens, so Enter prints.
+  $('billModal').addEventListener('shown.bs.modal', () => $('printBillBtn').focus());
   $('clearCartBtn').addEventListener('click', () => {
     cart.clear();
     hideErrors('cartErrors');
     renderCart();
   });
 
-  for (const id of ['receiveModal', 'transferModal', 'reorderModal', 'productModal', 'passwordModal']) bindModalFocus(id);
+  for (const id of ['receiveModal', 'transferModal', 'reorderModal', 'productModal', 'passwordModal', 'billModal']) bindModalFocus(id);
   $('receiveForm').addEventListener('submit', onReceiveSubmit);
   $('transferForm').addEventListener('submit', onTransferSubmit);
   $('reorderForm').addEventListener('submit', onReorderSubmit);

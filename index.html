@@ -15,21 +15,22 @@
     })();
   </script>
   <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css">
-  <link rel="stylesheet" href="css/style.css?v=2026-10-16-7">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-16-8">
   <!-- One version for every script, so the browser never mixes an old cached page with
        newer code. Change ASSET_VERSION (here and in the src below) on every release. -->
   <script type="importmap">
   {
     "imports": {
-      "./js/app.js": "./js/app.js?v=2026-10-16-7",
-      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-7",
-      "./js/store.js": "./js/store.js?v=2026-10-16-7",
-      "./js/export.js": "./js/export.js?v=2026-10-16-7",
-      "./js/ui.js": "./js/ui.js?v=2026-10-16-7",
-      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-7",
-      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-7",
-      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-7",
-      "./js/tests.js": "./js/tests.js?v=2026-10-16-7"
+      "./js/app.js": "./js/app.js?v=2026-10-16-8",
+      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-8",
+      "./js/store.js": "./js/store.js?v=2026-10-16-8",
+      "./js/export.js": "./js/export.js?v=2026-10-16-8",
+      "./js/ui.js": "./js/ui.js?v=2026-10-16-8",
+      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-8",
+      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-8",
+      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-8",
+      "./js/bill.js": "./js/bill.js?v=2026-10-16-8",
+      "./js/tests.js": "./js/tests.js?v=2026-10-16-8"
     }
   }
   </script>
@@ -245,13 +246,29 @@
                     <div id="cartErrors" class="alert alert-danger d-none" role="alert"></div>
                     <p id="cartEmpty" class="text-body-secondary small mb-2">The cart is empty. Use “Add to cart” on a row from your store.</p>
                     <ul id="cartLines" class="list-unstyled mb-0"></ul>
+                    <!-- Printed on the customer's bill. -->
+                    <div id="billDetails" class="row g-2 mt-1 mb-2 d-none">
+                      <div class="col-5">
+                        <label for="payMethod" class="form-label small mb-1">Paid by</label>
+                        <select id="payMethod" class="form-select form-select-sm">
+                          <option>Cash</option>
+                          <option>UPI</option>
+                          <option>Card</option>
+                        </select>
+                      </div>
+                      <div class="col-7">
+                        <label for="customerName" class="form-label small mb-1">Customer <span class="text-body-secondary">(optional)</span></label>
+                        <input id="customerName" type="text" class="form-control form-control-sm" maxlength="60" autocomplete="off">
+                      </div>
+                    </div>
                     <p class="cart-total">
                       <span>Total</span><span id="cartTotal" class="cart-line-total">₹0</span>
                     </p>
                     <div class="d-flex gap-2">
-                      <button id="checkoutBtn" type="button" class="btn btn-success flex-grow-1">Checkout</button>
+                      <button id="checkoutBtn" type="button" class="btn btn-success flex-grow-1">Checkout &amp; bill</button>
                       <button id="clearCartBtn" type="button" class="btn btn-outline-secondary">Clear</button>
                     </div>
+                    <button id="lastBillBtn" type="button" class="btn btn-link btn-sm px-0 mt-2 d-none">Reprint last bill</button>
                   </div>
                 </section>
               </div>
@@ -299,6 +316,25 @@
   </div>
 
   <!-- Receive modal -->
+  <!-- The customer's bill, shown after every sale. Print bill prints only the bill. -->
+  <div class="modal fade" id="billModal" tabindex="-1" aria-labelledby="billTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="billTitle">Bill</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="billPreview" class="bill-paper"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+          <button id="printBillBtn" type="button" class="btn btn-primary">Print bill</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="receiveModal" tabindex="-1" aria-labelledby="receiveTitle" aria-hidden="true">
     <div class="modal-dialog">
       <form id="receiveForm" class="modal-content" novalidate>
@@ -425,8 +461,11 @@
 
   <div id="toastArea" class="toast-container position-fixed bottom-0 end-0 p-3 no-print"></div>
 
+  <!-- Filled just before a bill prints; only shown on paper. -->
+  <div id="billSheet"></div>
+
   <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-  <script type="module" src="js/app.js?v=2026-10-16-7"></script>  <!-- ASSET_VERSION -->
+  <script type="module" src="js/app.js?v=2026-10-16-8"></script>  <!-- ASSET_VERSION -->
   <script>
     // Safety net: if app.js failed to start (for example the browser mixed old
     // and new cached files after a deploy), say so instead of showing a blank page.

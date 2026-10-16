@@ -335,6 +335,118 @@
   border-top: 1px solid var(--bs-border-color);
 }
 
+/* --- Customer bill ------------------------------------------------------ */
+/* 80 mm wide: fits a receipt printer, and prints neatly on A4 too. Always
+   black on white, like paper, even in dark mode. */
+.bill {
+  max-width: 80mm;
+  margin: 0 auto;
+  padding: 4mm;
+  background: #fff;
+  color: #000;
+  font-size: 12.5px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.bill-paper {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background: #fff;
+}
+
+.bill-head {
+  text-align: center;
+  padding-bottom: 2mm;
+  border-bottom: 1px dashed #000;
+}
+
+.bill-shop {
+  font-size: 1.25em;
+  font-weight: 700;
+}
+
+.bill-title {
+  margin-top: 1mm;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+}
+
+.bill-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 3mm;
+  margin: 2mm 0;
+}
+
+.bill-meta dt {
+  font-weight: 400;
+}
+
+.bill-meta dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.bill-lines {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bill-lines th,
+.bill-lines td {
+  padding: 1mm 0;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.bill-lines th + th,
+.bill-lines td + td {
+  padding-left: 2mm;
+}
+
+.bill-lines thead th {
+  border-top: 1px dashed #000;
+  border-bottom: 1px dashed #000;
+  font-weight: 600;
+  text-align: left;
+}
+
+.bill-lines .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bill-brand {
+  display: block;
+  font-size: 0.9em;
+  color: #444;
+}
+
+.bill-lines tfoot td {
+  border-top: 1px dashed #000;
+  font-weight: 700;
+  padding-top: 1.5mm;
+}
+
+.bill-total {
+  font-size: 1.15em;
+}
+
+.bill-foot {
+  margin-top: 3mm;
+  padding-top: 2mm;
+  border-top: 1px dashed #000;
+  text-align: center;
+}
+
+@media screen {
+  #billSheet {
+    display: none;
+  }
+}
+
 /* --- Visible keyboard focus (accessibility) ----------------------------- */
 :focus-visible {
   outline: 3px solid var(--bs-primary);
@@ -350,6 +462,19 @@
 
 /* --- Print stylesheet: Print → Save as PDF (R10) ------------------------ */
 @media print {
+  /* Printing a customer bill: only the bill, nothing else on the page. */
+  body.print-bill > :not(#billSheet) {
+    display: none !important;
+  }
+
+  body.print-bill #billSheet {
+    display: block;
+  }
+
+  body.print-bill .bill {
+    padding: 0;
+  }
+
   .no-print,
   .navbar,
   .btn,

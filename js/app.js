@@ -877,6 +877,14 @@ function signOut(message) {
   focusSignIn();
 }
 
+function leaveShopForAdmin() {
+  const name = currentUser.name;
+  saveSession(null);
+  currentUser = null;
+  cart.clear();
+  showBanner(`Signed out of the shop login "${name}" on this tab to open the admin sign-in.`, 'info');
+}
+
 // At /admin the Shop ID is filled in, so the admin only types the passcode.
 function prepareSignInForm() {
   if (isAdminAddress() && !$('loginId').value.trim()) $('loginId').value = ADMIN_LOGIN_ID;
@@ -903,6 +911,9 @@ function restoreUser() {
   }
   currentUser = resolveUser();
   if (!currentUser) session = null;
+  // /admin is the admin's door: a shop still signed in on this tab is signed
+  // out first, so the admin portal never opens a shop's dashboard.
+  if (currentUser && !isAdmin() && isAdminAddress()) leaveShopForAdmin();
   try {
     view = isAdmin() && sessionStorage.getItem(VIEW_KEY) === 'manage' ? 'manage' : 'stock';
   } catch {
@@ -1066,6 +1077,10 @@ async function start() {
     bindEvents();
     prepareSignInForm();
     window.addEventListener('hashchange', () => {
+      if (currentUser && !isAdmin() && isAdminAddress()) {
+        leaveShopForAdmin();
+        render();
+      }
       if (!currentUser) {
         prepareSignInForm();
         focusSignIn();

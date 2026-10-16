@@ -49,6 +49,23 @@ let state = null; // the whole saved data object
 let session = null; // { loginId, hash } or null
 let currentUser = null;
 let view = 'stock'; // admin only: 'stock' or 'manage' (Shops & logins)
+const VIEW_KEY = 'inventorysync:adminView'; // sessionStorage: the admin's view survives a refresh
+
+// The admin's own address: /admin (and the old /admin.html) open this page
+// with #admin, which shows "Admin sign in" with the Shop ID filled in.
+// Shops opening / never see it.
+function isAdminAddress() {
+  return location.hash === '#admin';
+}
+
+function setView(next) {
+  view = next === 'manage' ? 'manage' : 'stock';
+  try {
+    sessionStorage.setItem(VIEW_KEY, view);
+  } catch {
+    // not remembered after a refresh
+  }
+}
 let adminPanel = null; // loaded on first use by the admin
 const cart = new Map(); // sku -> qty, always for the signed-in manager's own store (kept in memory, per tab)
 const filters = { query: '', storeId: 'all', status: 'all' };
@@ -187,7 +204,11 @@ function renderWho() {
   $('whoAmI').textContent = isAdmin() ? 'Admin · head office' : userLabel(currentUser);
   // View switch: admin only.
   $('viewSwitch').classList.toggle('d-none', !isAdmin());
-  for (const b of $('viewSwitch').querySelectorAll('[data-view]')) b.setAttribute('aria-pressed', String(b.dataset.view === view));
+  for (const b of $('viewSwitch').querySelectorAll('[data-view]')) {
+    const on = b.dataset.view === view;
+    b.setAttribute('aria-pressed', String(on));
+    b.classList.toggle('active', on); // filled button = the view you are in
+  }
   // Remind a shop to replace a password made by head office.
   const account = !isAdmin() && session ? findAccount(state, session.loginId) : null;
   $('tempPasswordNotice').classList.toggle('d-none', !(account && account.tempPassword));
@@ -652,7 +673,7 @@ async function onSignInSubmit(event) {
       }
       saveSession({ loginId, hash });
       currentUser = ADMIN_USER;
-      view = 'stock';
+      setView('stock');
     } else {
       refreshFromStorage(); // a login created a moment ago in another tab must work
       const account = findAccount(state, loginId);
@@ -698,7 +719,16 @@ function failSignIn(errors) {
 // The second password box appears only when the admin passcode is being
 // chosen for the first time (Shop ID "admin" and no passcode yet).
 function updateSignInMode() {
-  const settingUp = normalizeLoginId($('loginId').value) === ADMIN_LOGIN_ID && !hasAdminPasscode();
+  const adminTyped = normalizeLoginId($('loginId').value) === ADMIN_LOGIN_ID;
+  const settingUp = adminTyped && !hasAdminPasscode();
+  // Reached through /admin: an admin sign-in. Otherwise the usual shop sign-in.
+  const adminForm = isAdminAddress() && (adminTyped || !$('loginId').value.trim());
+  $('signInHeading').textContent = adminForm ? 'Admin sign in' : 'Shop sign in';
+  $('signInIntro').textContent = !adminForm
+    ? 'Use the Shop ID and password your head office gave your shop.'
+    : settingUp
+      ? `No admin passcode is saved in this browser yet. Choose one (at least ${MIN_PASSWORD_LENGTH} characters) and type it twice. If you set one before, you are in a different browser or it was cleared.`
+      : 'Enter the admin passcode.';
   $('confirmWrap').classList.toggle('d-none', !settingUp);
   $('loginPasswordConfirm').required = settingUp;
   $('loginPassword').minLength = settingUp ? MIN_PASSWORD_LENGTH : 0;
@@ -828,13 +858,25 @@ async function onPasswordSubmit(event) {
 function signOut(message) {
   saveSession(null);
   currentUser = null;
-  view = 'stock';
+  setView('stock');
   if (adminPanel) adminPanel.hideNewLogin(); // never leave a shown password on screen
   cart.clear();
   hideErrors('cartErrors');
+  prepareSignInForm();
   render();
   if (message) showErrors('signInErrors', [message]);
-  $('loginId').focus();
+  focusSignIn();
+}
+
+// At /admin the Shop ID is filled in, so the admin only types the passcode.
+function prepareSignInForm() {
+  if (isAdminAddress() && !$('loginId').value.trim()) $('loginId').value = ADMIN_LOGIN_ID;
+  updateSignInMode();
+}
+
+function focusSignIn() {
+  if (isAdminAddress() && normalizeLoginId($('loginId').value) === ADMIN_LOGIN_ID) $('loginPassword').focus();
+  else $('loginId').focus();
 }
 
 // Start each user on their own view: a manager sees their store, the buyer all stores.
@@ -852,6 +894,11 @@ function restoreUser() {
   }
   currentUser = resolveUser();
   if (!currentUser) session = null;
+  try {
+    view = isAdmin() && sessionStorage.getItem(VIEW_KEY) === 'manage' ? 'manage' : 'stock';
+  } catch {
+    view = 'stock';
+  }
   resetFilters();
 }
 
@@ -876,7 +923,7 @@ function bindEvents() {
   $('viewSwitch').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-view]');
     if (!btn || !isAdmin()) return;
-    view = btn.dataset.view;
+    setView(btn.dataset.view);
     render();
   });
   $('changePasswordBtn').addEventListener('click', openPasswordModal);
@@ -985,7 +1032,6 @@ function bindEvents() {
 // ---------------------------------------------------------------------------
 
 async function start() {
-  window.inventorySyncStarted = true; // read by the safety-net script in index.html
   initTheme();
   if (!bs) {
     showBanner('Bootstrap 5.3.8 files were not found in vendor/bootstrap/. Layout, dialogs and the cart panel need them. See README → Setup.', 'danger');
@@ -1002,31 +1048,45 @@ async function start() {
     return;
   }
 
-  $('cartHeading').setAttribute('tabindex', '-1');
-  restoreUser();
-  bindEvents();
-  updateSignInMode();
+  try {
+    $('cartHeading').setAttribute('tabindex', '-1');
+    restoreUser();
+    bindEvents();
+    prepareSignInForm();
+    window.addEventListener('hashchange', () => {
+      if (!currentUser) {
+        prepareSignInForm();
+        focusSignIn();
+      }
+    });
 
-  // The admin passcode was changed or cleared in another tab: sign this admin tab out.
-  window.addEventListener('storage', (event) => {
-    if (event.key !== 'inventorysync:admin' && event.key !== null) return;
-    if (isAdmin() && !isAdminSession(session && session.hash)) signOut('You were signed out: the admin password was changed.');
-    else if (!currentUser) updateSignInMode();
-  });
+    // The admin passcode was changed or cleared in another tab: sign this admin tab out.
+    window.addEventListener('storage', (event) => {
+      if (event.key !== 'inventorysync:admin' && event.key !== null) return;
+      if (isAdmin() && !isAdminSession(session && session.hash)) signOut('You were signed out: the admin password was changed.');
+      else if (!currentUser) updateSignInMode();
+    });
 
-  // R4: when another tab saves, take its data and redraw (no save here, so no loop).
-  store.subscribe((fresh) => {
-    state = fresh;
-    const wasSignedIn = Boolean(currentUser);
-    currentUser = resolveUser();
-    if (wasSignedIn && !currentUser) {
-      signOut('You were signed out: this login was disabled or its password was changed.');
-      return;
-    }
+    // R4: when another tab saves, take its data and redraw (no save here, so no loop).
+    store.subscribe((fresh) => {
+      state = fresh;
+      const wasSignedIn = Boolean(currentUser);
+      currentUser = resolveUser();
+      if (wasSignedIn && !currentUser) {
+        signOut('You were signed out: this login was disabled or its password was changed.');
+        return;
+      }
+      render();
+    });
+
     render();
-  });
-
-  render();
+    if (!currentUser && isAdminAddress()) focusSignIn(); // /admin: straight to the passcode box
+    window.inventorySyncStarted = true; // read by the safety-net script in index.html
+  } catch (err) {
+    // Usually an old cached copy of the page mixed with newer code: say so instead of a blank page.
+    showBanner(`InventorySync could not start (${err.message}). Reload with Ctrl+Shift+R (Cmd+Shift+R on a Mac).`, 'danger');
+    window.inventorySyncStarted = true; // the message above replaces the safety-net one
+  }
 }
 
 start();

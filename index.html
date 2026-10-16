@@ -15,7 +15,24 @@
     })();
   </script>
   <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-16-2">
+  <!-- One version for every script, so the browser never mixes an old cached page with
+       newer code. Change ASSET_VERSION (here and in the src below) on every release. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/app.js": "./js/app.js?v=2026-10-16-2",
+      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-2",
+      "./js/store.js": "./js/store.js?v=2026-10-16-2",
+      "./js/export.js": "./js/export.js?v=2026-10-16-2",
+      "./js/ui.js": "./js/ui.js?v=2026-10-16-2",
+      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-2",
+      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-2",
+      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-2",
+      "./js/tests.js": "./js/tests.js?v=2026-10-16-2"
+    }
+  }
+  </script>
 </head>
 <body>
   <a class="visually-hidden-focusable" href="#main">Skip to main content</a>
@@ -59,7 +76,7 @@
           <div class="card">
             <div class="card-body">
               <h1 id="signInHeading" class="h4">Shop sign in</h1>
-              <p class="text-body-secondary small mb-3">
+              <p id="signInIntro" class="text-body-secondary small mb-3">
                 Use the Shop ID and password your head office gave your shop.
               </p>
               <form id="signInForm" novalidate>
@@ -414,7 +431,7 @@
   <div id="toastArea" class="toast-container position-fixed bottom-0 end-0 p-3 no-print"></div>
 
   <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=2026-10-16-2"></script>  <!-- ASSET_VERSION -->
   <script>
     // Safety net: if app.js failed to start (for example the browser mixed old
     // and new cached files after a deploy), say so instead of showing a blank page.

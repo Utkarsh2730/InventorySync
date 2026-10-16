@@ -7,17 +7,17 @@
   "redirects": [
     {
       "source": "/admin",
-      "destination": "/",
+      "destination": "/#admin",
       "permanent": false
     },
     {
       "source": "/admin/",
-      "destination": "/",
+      "destination": "/#admin",
       "permanent": false
     },
     {
       "source": "/admin.html",
-      "destination": "/",
+      "destination": "/#admin",
       "permanent": false
     }
   ]

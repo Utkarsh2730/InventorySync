@@ -5,6 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d6efd'/%3E%3Cpath d='M8 11l8-4 8 4v10l-8 4-8-4z M8 11l8 4 8-4 M16 15v10' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
   <title>InventorySync: critical-path checks</title>
+  <!-- One version for every script, so the browser never mixes an old cached page with
+       newer code. Change ASSET_VERSION (here and in the src below) on every release. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/app.js": "./js/app.js?v=2026-10-16-2",
+      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-2",
+      "./js/store.js": "./js/store.js?v=2026-10-16-2",
+      "./js/export.js": "./js/export.js?v=2026-10-16-2",
+      "./js/ui.js": "./js/ui.js?v=2026-10-16-2",
+      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-2",
+      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-2",
+      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-2",
+      "./js/tests.js": "./js/tests.js?v=2026-10-16-2"
+    }
+  }
+  </script>
   <style>
     body { font-family: system-ui, sans-serif; margin: 1rem; line-height: 1.5; }
     h1 { font-size: 1.25rem; }

@@ -8,10 +8,11 @@ Everyone uses **one page** (`/`, `index.html`) and the same sign-in screen:
 |-----|---------------|------|
 | A shop (Store Manager) | The **Shop ID and password** the admin created | Its own shop's stock, cart, Stop / Resume, Add product |
 | Head office (Inventory Buyer) | A head-office **Shop ID and password** | All shops: Receive, Transfer, Reorder, Add product |
-| The admin (you) | Shop ID **`admin`** and the **admin passcode** | Everything head office sees, plus a **Shops & logins** view; switch with **Stock \| Shops & logins** in the navbar |
+| The admin (you) | Open **`/admin`**: it shows **Admin sign in** with the Shop ID `admin` filled in; type the **admin passcode** | Everything head office sees, plus a **Shops & logins** view; switch with **Stock \| Shops & logins** in the navbar (the selected view is filled in, and it is remembered on refresh) |
 
-The sign-in screen shows no admin option, and the Shops & logins code is only loaded after the
-admin signs in, so shops never see it. Everyone can **Change password** from the navbar.
+Shops open `/` and see only **Shop sign in**, with no admin option; the Shops & logins code is
+only loaded after the admin signs in. Bookmark `/admin` for yourself (signing in at `/` with the
+Shop ID `admin` works too). Everyone can **Change password** from the navbar.
 
 Two front ends share the same rules, storage and data:
 
@@ -117,10 +118,11 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 
 ### 1.5 First run: admin passcode and shop logins
 
-1. Open `/`. In the sign-in form type the Shop ID **`admin`**. The first time in a browser a
-   second password box appears: choose the **admin passcode** (at least 8 characters), type it
-   twice and click **Save password and sign in**. The passcode belongs to that browser only.
-   From then on, sign in with `admin` and that passcode.
+1. Open **`/admin`** (e.g. <https://inventory-sync-lovat.vercel.app/admin>). It shows **Admin sign in**
+   with the Shop ID `admin` filled in. The first time in a browser it explains that no passcode is
+   saved yet and shows a second password box: choose the **admin passcode** (at least 8 characters),
+   type it twice and click **Save password and sign in**. The passcode belongs to that browser only.
+   From then on, open `/admin` and type the passcode.
 2. Click **Shops & logins** in the navbar. In **Create shop login**, choose a shop (or
    **Head office** for the buyer's all-shops view). The name fills in by itself. Click
    **Generate Shop ID and password**.
@@ -144,17 +146,22 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
    is no server to prove who is asking, that also **disables every shop login** (shops are
    signed out). Afterwards sign in as `admin` with a new passcode and enable each login again
    or reset its password. Stock, shops and products are kept.
-10. The old `/admin`, `/admin/` and `/admin.html` addresses now open the main page.
+10. `/admin`, `/admin/` and `/admin.html` all open the admin sign-in on the main page (`/#admin`).
 
 **Can't sign in?**
 
 | What you see | Fix |
 |--------------|-----|
-| Typing `admin` shows "Type the password again" although you set a passcode | You are in a different browser, profile or private window. The passcode, shops and logins live in the browser where you created them. |
+| `/admin` says "No admin passcode is saved in this browser yet" although you set one | You are in a different browser, profile or private window, or on the other site (Vercel and GitHub Pages keep separate data), or the site data was cleared. The passcode, shops and logins live in the browser and site where you created them. |
 | "Wrong Shop ID or password" as admin and you forgot the passcode | Use **Forgot password?** with the Shop ID `admin` (see step 9). |
 | A shop sees "Wrong Shop ID or password" | Check the Shop ID in **Shops & logins**. If the password is lost, use **Reset password** and give the shop the new one. |
 | "This page cannot check passwords here" | Open the site over `https://` or from `localhost`/`127.0.0.1`. A phone opening Live Server through a `http://192.168…` address is not a secure page, so passwords cannot be protected. |
-| A blank page or "did not start" | Press Ctrl+Shift+R (Cmd+Shift+R on a Mac) to reload without the cache. |
+| A blank page, "did not start" or "could not start" | Press Ctrl+Shift+R (Cmd+Shift+R on a Mac) to reload without the cache. Since every script is now loaded with one version number (see below), this should not happen after updates. |
+
+**Releasing a change:** `index.html` and `tests.html` load every script through an import map
+with one version number (`?v=…`). Change that number (it appears in the import map and on the
+`app.js` script tag) whenever you change a file in `js/` or `css/`, so browsers fetch the new set
+instead of mixing old cached files with new ones.
 
 ---
 
@@ -163,7 +170,7 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 | File | Purpose |
 |------|---------|
 | `index.html` | Shop page: Shop ID and password sign-in, 4 summary cards, stock table, alert panel, cart (offcanvas on phones), modals for Receive, Transfer, Reorder level and Add product. |
-| `admin.html`, `admin/index.html` | Old addresses of the former admin page; they open the main page. `vercel.json` also redirects `/admin`, `/admin/` and `/admin.html` to `/`. |
+| `admin.html`, `admin/index.html` | Make `/admin`, `/admin/` and `/admin.html` open the admin sign-in on the main page (`/#admin`). `vercel.json` does the same on Vercel. |
 | `css/style.css` | Custom styles, focus outlines, scroll boxes, alignment, `@media print` stylesheet. Shared by both pages and the React build. |
 | `js/inventory.js` | Pure rules, no DOM: `statusOf`, `can`, `checkout`, `transfer`, `receive`, `setReorderLevel`, `addProduct`, `setSelling`, `createAccount`, `resetAccountPassword`, `setAccountDisabled`, `signInAccount`, `userFromSession`, `suggestLoginId`, `addStore`, `filterRows`, plus read-only views. |
 | `js/store.js` | `load`, `save`, `reset`, `readLatest`, `subscribe` (BroadcastChannel and `storage` event). |

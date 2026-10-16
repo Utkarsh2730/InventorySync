@@ -123,8 +123,8 @@ export function createAdminPanel(ctx) {
 
     return h('div', { class: 'row g-3' },
       h('h1', { class: 'visually-hidden' }, 'Shops and logins'),
-      h('div', { class: 'col-12 col-xl-8' }, shopsCard),
-      h('div', { class: 'col-12 col-xl-4' }, createCard),
+      h('div', { class: 'col-12 col-lg-8' }, shopsCard),
+      h('div', { class: 'col-12 col-lg-4' }, createCard),
       h('div', { class: 'col-12' }, loginsCard),
       h('div', { class: 'col-12' }, resetCard));
   }

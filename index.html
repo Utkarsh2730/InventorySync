@@ -15,21 +15,21 @@
     })();
   </script>
   <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css">
-  <link rel="stylesheet" href="css/style.css?v=2026-10-16-5">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-16-6">
   <!-- One version for every script, so the browser never mixes an old cached page with
        newer code. Change ASSET_VERSION (here and in the src below) on every release. -->
   <script type="importmap">
   {
     "imports": {
-      "./js/app.js": "./js/app.js?v=2026-10-16-5",
-      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-5",
-      "./js/store.js": "./js/store.js?v=2026-10-16-5",
-      "./js/export.js": "./js/export.js?v=2026-10-16-5",
-      "./js/ui.js": "./js/ui.js?v=2026-10-16-5",
-      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-5",
-      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-5",
-      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-5",
-      "./js/tests.js": "./js/tests.js?v=2026-10-16-5"
+      "./js/app.js": "./js/app.js?v=2026-10-16-6",
+      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-6",
+      "./js/store.js": "./js/store.js?v=2026-10-16-6",
+      "./js/export.js": "./js/export.js?v=2026-10-16-6",
+      "./js/ui.js": "./js/ui.js?v=2026-10-16-6",
+      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-6",
+      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-6",
+      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-6",
+      "./js/tests.js": "./js/tests.js?v=2026-10-16-6"
     }
   }
   </script>
@@ -47,11 +47,6 @@
       <div class="collapse navbar-collapse" id="navMenu">
         <div class="ms-lg-auto d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center py-2 py-lg-0">
           <div id="userControls" class="d-flex flex-wrap gap-2 align-items-center d-none">
-            <!-- Only shown to the head-office owner: switch between the two views. -->
-            <div id="viewSwitch" class="btn-group btn-group-sm d-none" role="group" aria-label="View">
-              <button type="button" class="btn btn-outline-light" data-view="manage" aria-pressed="true">Shops &amp; logins</button>
-              <button type="button" class="btn btn-outline-light" data-view="stock" aria-pressed="false">Stock (all shops)</button>
-            </div>
             <span class="small who-am-i"><span class="text-body-secondary">Signed in:</span> <span id="whoAmI" class="fw-semibold"></span></span>
             <div class="d-flex gap-2 user-buttons">
               <button id="changePasswordBtn" type="button" class="btn btn-sm btn-outline-secondary">Change password</button>
@@ -431,7 +426,7 @@
   <div id="toastArea" class="toast-container position-fixed bottom-0 end-0 p-3 no-print"></div>
 
   <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-  <script type="module" src="js/app.js?v=2026-10-16-5"></script>  <!-- ASSET_VERSION -->
+  <script type="module" src="js/app.js?v=2026-10-16-6"></script>  <!-- ASSET_VERSION -->
   <script>
     // Safety net: if app.js failed to start (for example the browser mixed old
     // and new cached files after a deploy), say so instead of showing a blank page.

@@ -48,8 +48,6 @@ const SESSION_KEY = 'inventorysync:shopSession';
 let state = null; // the whole saved data object
 let session = null; // { loginId, hash } or null
 let currentUser = null;
-let view = 'stock'; // admin only: 'stock' or 'manage' (Shops & logins)
-const VIEW_KEY = 'inventorysync:adminView'; // sessionStorage: the admin's view survives a refresh
 
 // The admin's own address: /admin (and the old /admin.html) open this page
 // with #admin, which shows "Admin sign in" with the Shop ID filled in.
@@ -58,14 +56,6 @@ function isAdminAddress() {
   return location.hash === '#admin';
 }
 
-function setView(next) {
-  view = next === 'manage' ? 'manage' : 'stock';
-  try {
-    sessionStorage.setItem(VIEW_KEY, view);
-  } catch {
-    // not remembered after a refresh
-  }
-}
 let adminPanel = null; // loaded on first use by the admin
 const cart = new Map(); // sku -> qty, always for the signed-in manager's own store (kept in memory, per tab)
 const filters = { query: '', storeId: 'all', status: 'all' };
@@ -175,7 +165,7 @@ function runWrite(apply, { errorBox, success }) {
 function render() {
   const focusKey = focusKeyOf(document.activeElement);
   const signedIn = Boolean(currentUser);
-  const managing = signedIn && isAdmin() && view === 'manage';
+  const managing = signedIn && isAdmin(); // the admin portal is Shops & logins only, no stock
   $('signInScreen').classList.toggle('d-none', signedIn);
   $('appScreen').classList.toggle('d-none', !signedIn || managing);
   $('manageScreen').classList.toggle('d-none', !managing);
@@ -204,13 +194,6 @@ function render() {
 function renderWho() {
   $('whoAmI').textContent = isAdmin() ? 'Admin · head office' : userLabel(currentUser);
   renderPortalLook();
-  // View switch: admin only.
-  $('viewSwitch').classList.toggle('d-none', !isAdmin());
-  for (const b of $('viewSwitch').querySelectorAll('[data-view]')) {
-    const on = b.dataset.view === view;
-    b.setAttribute('aria-pressed', String(on));
-    b.classList.toggle('active', on); // filled button = the view you are in
-  }
   // Remind a shop to replace a password made by head office.
   const account = !isAdmin() && session ? findAccount(state, session.loginId) : null;
   $('tempPasswordNotice').classList.toggle('d-none', !(account && account.tempPassword));
@@ -245,7 +228,7 @@ function renderManage() {
       write: runWrite,
       resetData,
     });
-    if (view === 'manage') adminPanel.render();
+    if (isAdmin()) adminPanel.render();
   }).catch((err) => showBanner(`Could not open Shops & logins: ${err.message}`, 'danger'));
 }
 
@@ -689,7 +672,6 @@ async function onSignInSubmit(event) {
       }
       saveSession({ loginId, hash });
       currentUser = ADMIN_USER;
-      setView('manage'); // the admin portal opens on Shops & logins
     } else {
       refreshFromStorage(); // a login created a moment ago in another tab must work
       const account = findAccount(state, loginId);
@@ -883,7 +865,6 @@ async function onPasswordSubmit(event) {
 function signOut(message) {
   saveSession(null);
   currentUser = null;
-  setView('stock');
   if (adminPanel) adminPanel.hideNewLogin(); // never leave a shown password on screen
   cart.clear();
   hideErrors('cartErrors');
@@ -930,11 +911,6 @@ function restoreUser() {
   // /admin is the admin's door: a shop still signed in on this tab is signed
   // out first, so the admin portal never opens a shop's dashboard.
   if (currentUser && !isAdmin() && isAdminAddress()) leaveShopForAdmin();
-  try {
-    view = isAdmin() && sessionStorage.getItem(VIEW_KEY) !== 'stock' ? 'manage' : 'stock';
-  } catch {
-    view = 'stock';
-  }
   resetFilters();
 }
 
@@ -958,12 +934,6 @@ function bindEvents() {
       const input = document.getElementById('forgotConfirm');
       if (input) input.focus();
     }
-  });
-  $('viewSwitch').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-view]');
-    if (!btn || !isAdmin()) return;
-    setView(btn.dataset.view);
-    render();
   });
   $('changePasswordBtn').addEventListener('click', openPasswordModal);
   $('tempPasswordBtn').addEventListener('click', openPasswordModal);

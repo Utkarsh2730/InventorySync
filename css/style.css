@@ -41,7 +41,6 @@
     align-items: stretch !important;
   }
 
-  #viewSwitch .btn,
   .user-buttons .btn {
     flex: 1 1 0;
   }

@@ -418,7 +418,18 @@ export default function App() {
           </div>
         )}
 
-        {user && (
+        {isAdmin && (
+          // The admin portal has no stock screen: shops and logins are managed on the main page.
+          <section className="card mx-auto" style={{ maxWidth: '32rem' }} aria-labelledby="adminHeading">
+            <div className="card-body">
+              <h1 id="adminHeading" className="h5">Admin portal</h1>
+              <p className="mb-3">Shops and logins are managed on the main page.</p>
+              <a className="btn btn-primary" href="../#admin">Open Shops &amp; logins</a>
+            </div>
+          </section>
+        )}
+
+        {user && !isAdmin && (
           <>
             <div className="d-none d-print-block mb-3">
               <h1 className="h4 mb-1">InventorySync stock report</h1>

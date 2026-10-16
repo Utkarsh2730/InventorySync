@@ -8,7 +8,7 @@ Everyone uses **one page** (`/`, `index.html`) and the same sign-in screen:
 |-----|---------------|------|
 | A shop (Store Manager) | The **Shop ID and password** the admin created | Its own shop's stock, cart, Stop / Resume, Add product |
 | Head office (Inventory Buyer) | A head-office **Shop ID and password** | All shops: Receive, Transfer, Reorder, Add product |
-| The admin (you) | Open **`/admin`**: it shows **Admin sign in** with the Shop ID `admin` filled in; type the **admin passcode** | Everything head office sees, plus a **Shops & logins** view; switch with **Stock \| Shops & logins** in the navbar (the selected view is filled in, and it is remembered on refresh) |
+| The admin (you) | Open **`/admin`**: it shows **Admin sign in** with the Shop ID `admin` filled in; type the **admin passcode** | The **Shops & logins** screen only (shops, logins, passwords, Reset data). The admin portal has no stock screen; stock is seen by the shops and the head-office login. |
 
 Shops open `/` and see only **Shop sign in**, with no admin option; the Shops & logins code is
 only loaded after the admin signs in. Bookmark `/admin` for yourself (signing in at `/` with the
@@ -123,7 +123,7 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
    saved yet and shows a second password box: choose the **admin passcode** (at least 8 characters),
    type it twice and click **Save password and sign in**. The passcode belongs to that browser only.
    From then on, open `/admin` and type the passcode.
-2. Click **Shops & logins** in the navbar. In **Create shop login**, choose a shop (or
+2. The admin portal opens on **Shops & logins**. In **Create shop login**, choose a shop (or
    **Head office** for the buyer's all-shops view). The name fills in by itself. Click
    **Generate Shop ID and password**.
 3. The page shows the **Shop ID** (made from the shop name, e.g. `koramangala`) and a random
@@ -184,7 +184,7 @@ instead of mixing old cached files with new ones.
 | `data/sample-data.json` | 3 shops, 17 products (each with a brand; Toor Dal, Sunflower Oil and Assam Tea come from two brands), stock; no users or logins (the admin creates logins). |
 | `vendor/bootstrap/` | Bootstrap 5.3.8 CSS and JS bundle. |
 | `react/` | React + Vite source of the shop page: `src/App.jsx`, `src/useInventory.js` (wraps `store.js`), `src/components/`. |
-| `react-app/` | Built React site (output of `npm run build`). It supports the same sign-in (including `admin`) and Change password; for Shops & logins the admin follows a link to the main page. |
+| `react-app/` | Built React site (output of `npm run build`). It supports the same sign-in (including `admin`) and Change password; the admin sees no stock there, only a link to Shops & logins on the main page. |
 
 ### Data (one localStorage key: `inventorysync:v1`)
 
@@ -241,7 +241,7 @@ toolbar lists all of them in one click; **Resume** puts an item back on sale.
 
 ## 3. Manual demo / test script
 
-Sign in as `admin` (see 1.5), open **Shops & logins**, click **Reset data**, then create one login
+Sign in as `admin` (see 1.5), click **Reset data**, then create one login
 for **Koramangala**, one for **Indiranagar** and one for **Head office**. Use them in other tabs of
 the same browser.
 

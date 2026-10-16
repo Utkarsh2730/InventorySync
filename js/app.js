@@ -180,6 +180,7 @@ function render() {
   $('appScreen').classList.toggle('d-none', !signedIn || managing);
   $('manageScreen').classList.toggle('d-none', !managing);
   $('userControls').classList.toggle('d-none', !signedIn);
+  if (!signedIn) renderPortalLook(); // back to the shop look after signing out
 
   if (managing) {
     renderWho();
@@ -202,6 +203,7 @@ function render() {
 // with its own Shop ID and password).
 function renderWho() {
   $('whoAmI').textContent = isAdmin() ? 'Admin · head office' : userLabel(currentUser);
+  renderPortalLook();
   // View switch: admin only.
   $('viewSwitch').classList.toggle('d-none', !isAdmin());
   for (const b of $('viewSwitch').querySelectorAll('[data-view]')) {
@@ -212,6 +214,20 @@ function renderWho() {
   // Remind a shop to replace a password made by head office.
   const account = !isAdmin() && session ? findAccount(state, session.loginId) : null;
   $('tempPasswordNotice').classList.toggle('d-none', !(account && account.tempPassword));
+}
+
+// The admin portal looks different from the shop portal: dark navbar, an
+// "Admin portal" badge and its own tab title. Shops keep the light navbar.
+function renderPortalLook() {
+  const admin = isAdmin();
+  const nav = $('mainNav');
+  nav.classList.toggle('bg-body-tertiary', !admin);
+  nav.classList.toggle('bg-dark', admin);
+  if (admin) nav.setAttribute('data-bs-theme', 'dark');
+  else nav.removeAttribute('data-bs-theme');
+  $('portalBadge').textContent = admin ? 'Admin portal' : '';
+  $('portalBadge').classList.toggle('d-none', !admin);
+  document.title = admin ? 'InventorySync Admin' : 'InventorySync: multi-store stock and alerts';
 }
 
 // The admin's Shops & logins view, loaded the first time it is opened.
@@ -673,7 +689,7 @@ async function onSignInSubmit(event) {
       }
       saveSession({ loginId, hash });
       currentUser = ADMIN_USER;
-      setView('stock');
+      setView('manage'); // the admin portal opens on Shops & logins
     } else {
       refreshFromStorage(); // a login created a moment ago in another tab must work
       const account = findAccount(state, loginId);
@@ -915,7 +931,7 @@ function restoreUser() {
   // out first, so the admin portal never opens a shop's dashboard.
   if (currentUser && !isAdmin() && isAdminAddress()) leaveShopForAdmin();
   try {
-    view = isAdmin() && sessionStorage.getItem(VIEW_KEY) === 'manage' ? 'manage' : 'stock';
+    view = isAdmin() && sessionStorage.getItem(VIEW_KEY) !== 'stock' ? 'manage' : 'stock';
   } catch {
     view = 'stock';
   }

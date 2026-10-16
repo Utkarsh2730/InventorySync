@@ -15,21 +15,21 @@
     })();
   </script>
   <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css">
-  <link rel="stylesheet" href="css/style.css?v=2026-10-16-4">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-16-5">
   <!-- One version for every script, so the browser never mixes an old cached page with
        newer code. Change ASSET_VERSION (here and in the src below) on every release. -->
   <script type="importmap">
   {
     "imports": {
-      "./js/app.js": "./js/app.js?v=2026-10-16-4",
-      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-4",
-      "./js/store.js": "./js/store.js?v=2026-10-16-4",
-      "./js/export.js": "./js/export.js?v=2026-10-16-4",
-      "./js/ui.js": "./js/ui.js?v=2026-10-16-4",
-      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-4",
-      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-4",
-      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-4",
-      "./js/tests.js": "./js/tests.js?v=2026-10-16-4"
+      "./js/app.js": "./js/app.js?v=2026-10-16-5",
+      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-5",
+      "./js/store.js": "./js/store.js?v=2026-10-16-5",
+      "./js/export.js": "./js/export.js?v=2026-10-16-5",
+      "./js/ui.js": "./js/ui.js?v=2026-10-16-5",
+      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-5",
+      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-5",
+      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-5",
+      "./js/tests.js": "./js/tests.js?v=2026-10-16-5"
     }
   }
   </script>
@@ -37,9 +37,9 @@
 <body>
   <a class="visually-hidden-focusable" href="#main">Skip to main content</a>
 
-  <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom no-print" aria-label="Main">
+  <nav id="mainNav" class="navbar navbar-expand-lg bg-body-tertiary border-bottom no-print" aria-label="Main">
     <div class="container-fluid">
-      <span class="navbar-brand fw-semibold">InventorySync</span>
+      <span class="navbar-brand fw-semibold">InventorySync <span id="portalBadge" class="badge text-bg-warning align-middle d-none"></span></span>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu"
               aria-controls="navMenu" aria-expanded="false" aria-label="Toggle menu">
         <span class="navbar-toggler-icon"></span>
@@ -49,8 +49,8 @@
           <div id="userControls" class="d-flex flex-wrap gap-2 align-items-center d-none">
             <!-- Only shown to the head-office owner: switch between the two views. -->
             <div id="viewSwitch" class="btn-group btn-group-sm d-none" role="group" aria-label="View">
-              <button type="button" class="btn btn-outline-primary" data-view="stock" aria-pressed="true">Stock</button>
-              <button type="button" class="btn btn-outline-primary" data-view="manage" aria-pressed="false">Shops &amp; logins</button>
+              <button type="button" class="btn btn-outline-light" data-view="manage" aria-pressed="true">Shops &amp; logins</button>
+              <button type="button" class="btn btn-outline-light" data-view="stock" aria-pressed="false">Stock (all shops)</button>
             </div>
             <span class="small who-am-i"><span class="text-body-secondary">Signed in:</span> <span id="whoAmI" class="fw-semibold"></span></span>
             <div class="d-flex gap-2 user-buttons">
@@ -431,7 +431,7 @@
   <div id="toastArea" class="toast-container position-fixed bottom-0 end-0 p-3 no-print"></div>
 
   <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-  <script type="module" src="js/app.js?v=2026-10-16-4"></script>  <!-- ASSET_VERSION -->
+  <script type="module" src="js/app.js?v=2026-10-16-5"></script>  <!-- ASSET_VERSION -->
   <script>
     // Safety net: if app.js failed to start (for example the browser mixed old
     // and new cached files after a deploy), say so instead of showing a blank page.

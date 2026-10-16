@@ -15,6 +15,25 @@
   overflow-wrap: anywhere;
 }
 
+/* Admin portal navbar: dark, with light text and light-outlined buttons. */
+#mainNav[data-bs-theme="dark"] {
+  color: #f8f9fa;
+}
+
+#mainNav[data-bs-theme="dark"] .text-body-secondary {
+  color: #ced4da !important;
+}
+
+#mainNav[data-bs-theme="dark"] .btn-outline-secondary {
+  --bs-btn-color: #f8f9fa;
+  --bs-btn-border-color: #adb5bd;
+  --bs-btn-hover-color: #212529;
+  --bs-btn-hover-bg: #f8f9fa;
+  --bs-btn-hover-border-color: #f8f9fa;
+  --bs-btn-active-color: #212529;
+  --bs-btn-active-bg: #f8f9fa;
+}
+
 /* Phone / tablet navbar menu: one clean column. */
 @media (max-width: 991.98px) {
   #userControls {

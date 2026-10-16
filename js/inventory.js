@@ -522,8 +522,23 @@ export function addStore(state, actor, input) {
 // Read-only views used by the UI, CSV export and tests
 // ---------------------------------------------------------------------------
 
+// Rows are built once per saved state and reused by the table, cards, alerts
+// and admin page. This is safe because rules never change a state in place:
+// every write returns a new copy, so a new state always gets new rows.
+// Treat the returned rows as read-only.
+const rowsCache = new WeakMap();
+
 // One row per store and SKU, with the chain-wide total for that SKU (R2).
 export function buildRows(state) {
+  let rows = rowsCache.get(state);
+  if (!rows) {
+    rows = makeRows(state);
+    rowsCache.set(state, rows);
+  }
+  return rows;
+}
+
+function makeRows(state) {
   const chainTotals = {};
   for (const p of state.products) {
     chainTotals[p.sku] = state.stores.reduce((sum, s) => sum + state.stock[s.id][p.sku].qty, 0);
@@ -545,6 +560,7 @@ export function buildRows(state) {
         status: stopped ? 'Stopped' : statusOf(qty, reorderLevel),
         value: qty * p.price,
         chainTotal: chainTotals[p.sku],
+        searchText: `${p.name}\n${p.brand || ''}\n${p.sku}`.toLowerCase(), // for the search box
       });
     }
   }
@@ -563,7 +579,7 @@ export function filterRows(rows, filters = {}) {
     if (storeId !== 'all' && r.storeId !== storeId) return false;
     if (status === 'all' && r.status === 'Stopped') return false;
     if (status !== 'all' && r.status !== status) return false;
-    if (query && ![r.name, r.brand, r.sku].some((text) => String(text).toLowerCase().includes(query))) return false;
+    if (query && !r.searchText.includes(query)) return false;
     return true;
   });
 }
@@ -576,21 +592,25 @@ function rowsForStore(state, storeId) {
 
 // Numbers for the four summary cards: one store, or the whole chain.
 export function summarize(state, storeId = 'all') {
-  const rows = rowsForStore(state, storeId);
-  return {
-    totalSkus: state.products.length,
-    low: rows.filter((r) => r.status === 'Low').length,
-    out: rows.filter((r) => r.status === 'Out').length,
-    stopped: rows.filter((r) => r.status === 'Stopped').length,
-    stockValue: rows.reduce((sum, r) => sum + r.value, 0),
-  };
+  const sum = { totalSkus: state.products.length, low: 0, out: 0, stopped: 0, stockValue: 0 };
+  for (const r of rowsForStore(state, storeId)) {
+    if (r.status === 'Low') sum.low += 1;
+    else if (r.status === 'Out') sum.out += 1;
+    else if (r.status === 'Stopped') sum.stopped += 1;
+    sum.stockValue += r.value;
+  }
+  return sum;
 }
 
 // R5: every item needing action in one store (or every store), Out first, then Low.
 export function alertsOf(state, storeId = 'all') {
-  return rowsForStore(state, storeId)
-    .filter((r) => r.status === 'Low' || r.status === 'Out')
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === 'Out' ? -1 : 1));
+  const out = [];
+  const low = [];
+  for (const r of rowsForStore(state, storeId)) {
+    if (r.status === 'Out') out.push(r);
+    else if (r.status === 'Low') low.push(r);
+  }
+  return out.concat(low);
 }
 
 // The store a user should see first: a manager's own store, otherwise all.

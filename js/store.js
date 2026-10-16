@@ -26,6 +26,12 @@ const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(CH
 
 const storageOk = checkStorage();
 let lastRaw = null; // the JSON text this tab last saved or loaded
+let lastState = null; // the same data, already parsed (never changed in place)
+
+function remember(raw, state) {
+  lastRaw = raw;
+  lastState = state;
+}
 
 function checkStorage() {
   try {
@@ -90,7 +96,7 @@ export async function load() {
 
   const state = parse(raw);
   if (state) {
-    lastRaw = raw;
+    remember(raw, state);
     // Saved by an older version: keep the upgraded data so every tab sees it.
     if (JSON.stringify(state) !== raw) save(state);
     return { state, notice: null };
@@ -109,7 +115,11 @@ export async function load() {
 // first so they never work on a stale copy. Returns null if there is nothing
 // valid saved (the caller then keeps its in-memory state).
 export function readLatest() {
-  return parse(readRaw());
+  const raw = readRaw();
+  if (raw !== null && raw === lastRaw && lastState) return lastState; // unchanged: skip parsing
+  const state = parse(raw);
+  if (state) remember(raw, state);
+  return state;
 }
 
 // Save the whole state, then tell other tabs. Returns { ok, error }.
@@ -128,7 +138,7 @@ export function save(state) {
         : 'This change could not be saved to browser storage.',
     };
   }
-  lastRaw = raw;
+  remember(raw, state);
   if (channel) channel.postMessage({ type: 'saved' });
   return { ok: true, error: null };
 }
@@ -155,7 +165,7 @@ export function subscribe(onChange) {
     if (raw === null || raw === lastRaw) return; // nothing new (or mid-reset)
     const state = parse(raw);
     if (!state) return;
-    lastRaw = raw;
+    remember(raw, state);
     onChange(state);
   };
   const onStorage = (event) => {

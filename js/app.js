@@ -59,7 +59,11 @@ function isAdminAddress() {
 let adminPanel = null; // loaded on first use by the admin
 const cart = new Map(); // sku -> qty, always for the signed-in manager's own store (kept in memory, per tab)
 const filters = { query: '', storeId: 'all', status: 'all' };
-let visibleRows = []; // rows currently shown in the table (also what CSV exports)
+let visibleRows = []; // rows matching the filters (also what CSV exports and Print shows)
+const ROW_STEP = 200; // the table draws this many rows at a time; "Show more" adds the next batch
+let rowLimit = ROW_STEP;
+let renderQueued = false;
+let searchTimer = 0;
 let modalContext = {}; // { storeId, sku } for the modal that is open
 let modalReturnFocus = null; // where keyboard focus goes when the modal closes
 
@@ -130,10 +134,21 @@ function saveSession(next) {
 // Re-read the newest saved data so another tab's sale is never overwritten.
 function refreshFromStorage() {
   const latest = store.readLatest();
-  if (latest) {
+  if (latest && latest !== state) {
     state = latest;
     currentUser = resolveUser();
+    scheduleRender(); // another tab's change is shown even if this action is refused
   }
+}
+
+// Many saves in a burst (other tabs, sync events) are drawn once per frame.
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+  });
 }
 
 // apply(state) must return { ok, errors, state } from inventory.js.
@@ -299,6 +314,22 @@ function statusBadge(status) {
   return h('span', { class: `badge status-badge ${cls}` }, status);
 }
 
+// What the signed-in user may do at each store, worked out once per redraw
+// instead of five times for every row.
+function permissionsByStore() {
+  const map = new Map();
+  for (const st of state.stores) {
+    map.set(st.id, {
+      sell: can(currentUser, 'sell', st.id),
+      receive: can(currentUser, 'receive', st.id),
+      transfer: can(currentUser, 'transfer', st.id),
+      reorder: can(currentUser, 'setReorder', st.id),
+      setSelling: can(currentUser, 'setSelling', st.id),
+    });
+  }
+  return map;
+}
+
 // label is the short text on the button; fullLabel is read out by screen readers.
 function actionButton(action, label, row, style, disabled = false, fullLabel = label) {
   return h('button', {
@@ -312,13 +343,13 @@ function actionButton(action, label, row, style, disabled = false, fullLabel = l
   }, label);
 }
 
-function rowElement(r) {
+function rowElement(r, may, chainTotalClass) {
   const actions = [];
-  if (can(currentUser, 'sell', r.storeId) && !r.stopped) actions.push(actionButton('sell', 'Add to cart', r, 'btn-primary', r.qty === 0));
-  if (can(currentUser, 'receive', r.storeId)) actions.push(actionButton('receive', 'Receive', r, 'btn-outline-primary'));
-  if (can(currentUser, 'transfer', r.storeId)) actions.push(actionButton('transfer', 'Transfer', r, 'btn-outline-primary', r.qty === 0));
-  if (can(currentUser, 'setReorder', r.storeId)) actions.push(actionButton('reorder', 'Reorder', r, 'btn-outline-secondary', false, 'Reorder level'));
-  if (can(currentUser, 'setSelling', r.storeId)) {
+  if (may.sell && !r.stopped) actions.push(actionButton('sell', 'Add to cart', r, 'btn-primary', r.qty === 0));
+  if (may.receive) actions.push(actionButton('receive', 'Receive', r, 'btn-outline-primary'));
+  if (may.transfer) actions.push(actionButton('transfer', 'Transfer', r, 'btn-outline-primary', r.qty === 0));
+  if (may.reorder) actions.push(actionButton('reorder', 'Reorder', r, 'btn-outline-secondary', false, 'Reorder level'));
+  if (may.setSelling) {
     actions.push(r.stopped
       ? actionButton('resume', 'Resume', r, 'btn-outline-success', false, 'Resume selling')
       : actionButton('stop', 'Stop', r, 'btn-outline-secondary', false, 'Stop selling'));
@@ -335,7 +366,7 @@ function rowElement(r) {
     h('td', { class: 'text-end qty-cell fw-semibold' }, r.qty),
     h('td', { class: 'text-end qty-cell d-none d-xl-table-cell print-cell' }, r.reorderLevel),
     h('td', { class: 'text-center' }, statusBadge(r.status)),
-    h('td', { class: `text-end qty-cell chain-total-cell${showChainTotal() ? '' : ' d-none'}` }, r.chainTotal),
+    h('td', { class: chainTotalClass }, r.chainTotal),
     h('td', { class: 'text-end d-none d-xl-table-cell print-cell' }, inr.format(r.value)),
     h('td', { class: 'actions-cell no-print' }, actions.length
       ? h('div', { class: 'btn-group btn-group-sm row-actions', role: 'group', 'aria-label': `Actions for ${productLabel(r)} at ${r.storeName}` }, actions)
@@ -344,9 +375,10 @@ function rowElement(r) {
 
 function renderTable() {
   // Every row of the chosen store (including stopped items); the filters
-  // then pick what is shown.
-  const scopeRows = buildRows(state).filter((r) => filters.storeId === 'all' || r.storeId === filters.storeId);
-  visibleRows = filterRows(scopeRows, filters);
+  // then pick what is shown. buildRows is cached, so this is cheap.
+  const allRows = buildRows(state);
+  const scopeCount = filters.storeId === 'all' ? allRows.length : allRows.filter((r) => r.storeId === filters.storeId).length;
+  visibleRows = filterRows(allRows, filters);
   $('chainTotalHead').classList.toggle('d-none', !showChainTotal());
   const body = $('stockBody');
   if (visibleRows.length === 0) {
@@ -355,14 +387,29 @@ function renderTable() {
       : 'No items match these filters.';
     body.replaceChildren(h('tr', {}, h('td', { colspan: '10', class: 'text-center text-body-secondary py-4' }, message)));
   } else {
-    body.replaceChildren(...visibleRows.map(rowElement));
+    // Long lists are drawn in batches so the page stays quick with thousands of items.
+    const shown = visibleRows.slice(0, rowLimit);
+    const may = permissionsByStore();
+    const chainTotalClass = `text-end qty-cell chain-total-cell${showChainTotal() ? '' : ' d-none'}`;
+    const rows = document.createDocumentFragment();
+    for (const r of shown) rows.append(rowElement(r, may.get(r.storeId), chainTotalClass));
+    const more = visibleRows.length - shown.length;
+    if (more > 0) {
+      rows.append(h('tr', { class: 'no-print' }, h('td', { colspan: '10', class: 'text-center py-2' },
+        h('button', { type: 'button', id: 'showMoreRows', class: 'btn btn-sm btn-outline-secondary' },
+          `Show ${Math.min(more, ROW_STEP)} more (${more} not shown)`))));
+    }
+    body.replaceChildren(rows);
   }
-  $('rowCount').textContent = `Showing ${visibleRows.length} of ${scopeRows.length} items · ${scopeName()}`;
+  $('rowCount').textContent = `Showing ${visibleRows.length} of ${scopeCount} items · ${scopeName()}`;
+}
 
-  const storeText = scopeName();
+// The "Printed …" line is only needed when printing, so it is written then.
+function renderPrintMeta() {
+  if (!currentUser) return;
   const statusText = { all: 'All items on sale', Stopped: 'Stopped selling' }[filters.status] || filters.status;
   const searchText = filters.query ? ` · Search: "${filters.query}"` : '';
-  $('printMeta').textContent = `Printed ${new Date().toLocaleString('en-IN')} by ${currentUser.name} · Store: ${storeText} · Status: ${statusText}${searchText}`;
+  $('printMeta').textContent = `Printed ${new Date().toLocaleString('en-IN')} by ${currentUser.name} · Store: ${scopeName()} · Status: ${statusText}${searchText}`;
 }
 
 function renderAlerts() {
@@ -898,6 +945,7 @@ function resetFilters() {
   filters.query = '';
   filters.status = 'all';
   filters.storeId = defaultStoreFor(currentUser);
+  rowLimit = ROW_STEP;
 }
 
 function restoreUser() {
@@ -952,28 +1000,37 @@ function bindEvents() {
   $('stoppedBtn').addEventListener('click', () => {
     filters.status = filters.status === 'Stopped' ? 'all' : 'Stopped';
     if (filters.status === 'Stopped') filters.storeId = currentUser.storeId;
+    rowLimit = ROW_STEP;
     render();
   });
 
   // Filters (R9)
   $('filterForm').addEventListener('submit', (e) => e.preventDefault());
+  // Search waits for a short pause in typing, so fast typing redraws once.
   $('searchInput').addEventListener('input', (e) => {
     filters.query = e.target.value;
-    renderTable();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      rowLimit = ROW_STEP;
+      renderTable();
+    }, 150);
   });
   // The store filter changes the cards and alerts too, so redraw everything.
   $('storeFilter').addEventListener('change', (e) => {
     filters.storeId = e.target.value;
+    rowLimit = ROW_STEP;
     render();
   });
   $('statusFilter').addEventListener('change', (e) => {
     filters.status = e.target.value;
+    rowLimit = ROW_STEP;
     render(); // also updates the Stopped selling button
   });
   $('clearFilters').addEventListener('click', () => {
     filters.query = '';
     filters.storeId = 'all';
     filters.status = 'all';
+    rowLimit = ROW_STEP;
     render();
   });
 
@@ -986,13 +1043,29 @@ function bindEvents() {
     downloadRowsAsCsv(visibleRows, { includeChainTotal: showChainTotal() });
     toast(`Exported ${visibleRows.length} rows to CSV.`);
   });
-  $('printBtn').addEventListener('click', () => {
-    renderTable(); // refresh the "Printed …" line
-    window.print();
+  $('printBtn').addEventListener('click', () => window.print());
+  // Print every matching row, not just the batch on screen, then go back.
+  window.addEventListener('beforeprint', () => {
+    if (!currentUser || isAdmin()) return;
+    renderPrintMeta();
+    if (visibleRows.length > rowLimit) {
+      rowLimit = Infinity;
+      renderTable();
+      window.addEventListener('afterprint', () => {
+        rowLimit = ROW_STEP;
+        renderTable();
+      }, { once: true });
+    }
   });
 
   // Row buttons
   $('stockBody').addEventListener('click', (e) => {
+    if (e.target.closest('#showMoreRows')) {
+      rowLimit += ROW_STEP;
+      renderTable();
+      if ($('showMoreRows')) $('showMoreRows').focus(); // keyboard users can keep pressing it
+      return;
+    }
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
     const { action, store: storeId, sku } = btn.dataset;
@@ -1089,7 +1162,7 @@ async function start() {
         signOut('You were signed out: this login was disabled or its password was changed.');
         return;
       }
-      render();
+      scheduleRender();
     });
 
     render();

@@ -6,6 +6,8 @@ const THEME_KEY = 'inventorysync:theme'; // localStorage: dark/light choice
 export const bs = window.bootstrap || null; // Bootstrap's JS bundle (from vendor/)
 
 export const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// Tax amounts always show paise: ₹8.10, not ₹8.1.
+export const inrTax = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const $ = (id) => document.getElementById(id);
 

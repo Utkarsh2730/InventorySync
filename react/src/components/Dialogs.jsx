@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { findProduct, productLabel } from '../../../js/inventory.js';
+import { GST_CATEGORIES, gstCategoryLabel } from '../../../js/gst.js';
 import { storeNameOf } from '../format.js';
 import Modal from './Modal.jsx';
 
@@ -82,12 +83,12 @@ export function ReorderDialog({ state, storeId, sku, onConfirm, onClose }) {
 }
 
 export function ProductDialog({ onConfirm, onClose }) {
-  const [form, setForm] = useState({ sku: '', name: '', brand: '', price: '', reorderLevel: '' });
+  const [form, setForm] = useState({ sku: '', name: '', brand: '', price: '', reorderLevel: '', taxCategory: '' });
   const [errors, submit] = useConfirm(onConfirm);
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
   return (
     <Modal title="Add product" submitLabel="Add product" errors={errors} onClose={onClose}
-      onSubmit={() => submit({ sku: form.sku, name: form.name, brand: form.brand, price: Number(form.price), reorderLevel: Number(form.reorderLevel) })}>
+      onSubmit={() => submit({ sku: form.sku, name: form.name, brand: form.brand, price: Number(form.price), reorderLevel: Number(form.reorderLevel), taxCategory: form.taxCategory })}>
       <p className="small text-body-secondary">The product starts at 0 in every store. Receive or transfer stock afterwards.</p>
       <div className="mb-3">
         <label htmlFor="productSku" className="form-label">SKU</label>
@@ -110,7 +111,7 @@ export function ProductDialog({ onConfirm, onClose }) {
       </div>
       <div className="row g-3">
         <div className="col-6">
-          <label htmlFor="productPrice" className="form-label">Price (₹)</label>
+          <label htmlFor="productPrice" className="form-label">Price incl. GST (₹)</label>
           <input id="productPrice" type="number" className="form-control" required min="0" max="10000000" step="0.01"
             inputMode="decimal" {...field('price')} />
           <div className="invalid-feedback">Enter a price of 0 or more.</div>
@@ -121,6 +122,15 @@ export function ProductDialog({ onConfirm, onClose }) {
             inputMode="numeric" {...field('reorderLevel')} />
           <div className="invalid-feedback">Whole number, 0 or more.</div>
         </div>
+      </div>
+      <div className="mt-3">
+        <label htmlFor="productGst" className="form-label">Type of product (GST)</label>
+        <select id="productGst" className="form-select" required {...field('taxCategory')}>
+          <option value="">Choose…</option>
+          {GST_CATEGORIES.map((c) => <option key={c.id} value={c.id}>{gstCategoryLabel(c)}</option>)}
+        </select>
+        <div className="invalid-feedback">Choose the type of product.</div>
+        <div className="form-text">The GST rate comes from the government's rate for this type of product. The price above includes GST.</div>
       </div>
     </Modal>
   );

@@ -1,28 +1,28 @@
 {
-  "version": 3,
+  "version": 4,
   "stores": [
     { "id": "koramangala", "name": "Koramangala", "city": "Bengaluru" },
     { "id": "indiranagar", "name": "Indiranagar", "city": "Bengaluru" },
     { "id": "jayanagar", "name": "Jayanagar", "city": "Bengaluru" }
   ],
   "products": [
-    { "sku": "TOOR-1KG", "name": "Toor Dal 1 kg", "brand": "Tata Sampann", "price": 165 },
-    { "sku": "TOOR-1KG-24M", "name": "Toor Dal 1 kg", "brand": "24 Mantra Organic", "price": 189 },
-    { "sku": "ATTA-5KG", "name": "Whole Wheat Atta 5 kg", "brand": "Aashirvaad", "price": 285 },
-    { "sku": "BASM-5KG", "name": "Basmati Rice 5 kg", "brand": "India Gate", "price": 699 },
-    { "sku": "SUNOIL-1L", "name": "Sunflower Oil 1 L", "brand": "Fortune", "price": 155 },
-    { "sku": "SUNOIL-1L-SAF", "name": "Sunflower Oil 1 L", "brand": "Saffola", "price": 170 },
-    { "sku": "SUGAR-1KG", "name": "Sugar 1 kg", "brand": "Madhur", "price": 48 },
-    { "sku": "SALT-1KG", "name": "Iodised Salt 1 kg", "brand": "Tata Salt", "price": 28 },
-    { "sku": "TEA-500G", "name": "Assam Tea 500 g", "brand": "Tata Tea Gold", "price": 260 },
-    { "sku": "TEA-500G-RL", "name": "Assam Tea 500 g", "brand": "Red Label", "price": 245 },
-    { "sku": "MILK-500ML", "name": "Toned Milk 500 ml", "brand": "Nandini", "price": 27 },
-    { "sku": "GHEE-500ML", "name": "Cow Ghee 500 ml", "brand": "Amul", "price": 340 },
-    { "sku": "BISC-MARIE", "name": "Biscuits, Marie \"Family Pack\"", "brand": "Britannia", "price": 60 },
-    { "sku": "SOAP-4PK", "name": "Bathing Soap (4-pack)", "brand": "Mysore Sandal", "price": 180 },
-    { "sku": "DET-1KG", "name": "Detergent Powder 1 kg", "brand": "Surf Excel", "price": 120 },
-    { "sku": "RAGI-1KG", "name": "Ragi Flour 1 kg", "brand": "24 Mantra Organic", "price": 72 },
-    { "sku": "COFFEE-200G", "name": "Filter Coffee 200 g", "brand": "Cothas", "price": 210 }
+    { "sku": "TOOR-1KG", "name": "Toor Dal 1 kg", "brand": "Tata Sampann", "price": 165, "taxCategory": "pulses-packed" },
+    { "sku": "TOOR-1KG-24M", "name": "Toor Dal 1 kg", "brand": "24 Mantra Organic", "price": 189, "taxCategory": "pulses-packed" },
+    { "sku": "ATTA-5KG", "name": "Whole Wheat Atta 5 kg", "brand": "Aashirvaad", "price": 285, "taxCategory": "atta-packed" },
+    { "sku": "BASM-5KG", "name": "Basmati Rice 5 kg", "brand": "India Gate", "price": 699, "taxCategory": "rice-packed" },
+    { "sku": "SUNOIL-1L", "name": "Sunflower Oil 1 L", "brand": "Fortune", "price": 155, "taxCategory": "oil-sunflower" },
+    { "sku": "SUNOIL-1L-SAF", "name": "Sunflower Oil 1 L", "brand": "Saffola", "price": 170, "taxCategory": "oil-sunflower" },
+    { "sku": "SUGAR-1KG", "name": "Sugar 1 kg", "brand": "Madhur", "price": 48, "taxCategory": "sugar" },
+    { "sku": "SALT-1KG", "name": "Iodised Salt 1 kg", "brand": "Tata Salt", "price": 28, "taxCategory": "salt" },
+    { "sku": "TEA-500G", "name": "Assam Tea 500 g", "brand": "Tata Tea Gold", "price": 260, "taxCategory": "tea" },
+    { "sku": "TEA-500G-RL", "name": "Assam Tea 500 g", "brand": "Red Label", "price": 245, "taxCategory": "tea" },
+    { "sku": "MILK-500ML", "name": "Toned Milk 500 ml", "brand": "Nandini", "price": 27, "taxCategory": "milk" },
+    { "sku": "GHEE-500ML", "name": "Cow Ghee 500 ml", "brand": "Amul", "price": 340, "taxCategory": "ghee-butter" },
+    { "sku": "BISC-MARIE", "name": "Biscuits, Marie \"Family Pack\"", "brand": "Britannia", "price": 60, "taxCategory": "biscuits" },
+    { "sku": "SOAP-4PK", "name": "Bathing Soap (4-pack)", "brand": "Mysore Sandal", "price": 180, "taxCategory": "soap" },
+    { "sku": "DET-1KG", "name": "Detergent Powder 1 kg", "brand": "Surf Excel", "price": 120, "taxCategory": "detergent" },
+    { "sku": "RAGI-1KG", "name": "Ragi Flour 1 kg", "brand": "24 Mantra Organic", "price": 72, "taxCategory": "flour-other-packed" },
+    { "sku": "COFFEE-200G", "name": "Filter Coffee 200 g", "brand": "Cothas", "price": 210, "taxCategory": "coffee" }
   ],
   "stock": {
     "koramangala": {

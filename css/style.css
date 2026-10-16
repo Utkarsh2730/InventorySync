@@ -93,6 +93,20 @@
   min-width: 0;
 }
 
+/* Admin page: GST rates table scrolls in its own box. */
+.tax-search {
+  max-width: 16rem;
+}
+
+.tax-scroll {
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
+.tax-select {
+  min-width: 14rem;
+}
+
 /* Admin page: forgotten-passcode panel. */
 .forgot-panel {
   padding: 0.75rem;
@@ -432,6 +446,46 @@
 
 .bill-total {
   font-size: 1.15em;
+}
+
+.bill-tax {
+  width: 100%;
+  margin-top: 2mm;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.bill-tax caption {
+  caption-side: top;
+  padding: 0 0 1mm;
+  color: #000;
+  font-weight: 600;
+}
+
+.bill-tax th,
+.bill-tax td {
+  padding: 0.5mm 0;
+}
+
+.bill-tax th + th,
+.bill-tax td + td {
+  padding-left: 2mm;
+}
+
+.bill-tax th {
+  font-weight: 400;
+  text-align: left;
+  border-bottom: 1px dashed #000;
+}
+
+.bill-tax .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bill-tax tfoot td {
+  border-top: 1px dashed #000;
+  font-weight: 600;
 }
 
 .bill-foot {

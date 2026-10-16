@@ -1,7 +1,8 @@
 // admin-panel.js: the "Shops & logins" view for the head-office admin. It is
 // loaded by app.js only after the admin signs in, so shops never download or
 // see it. Changes go through rules in inventory.js (createAccount,
-// resetAccountPassword, setAccountDisabled, addStore), which check can() first.
+// resetAccountPassword, setAccountDisabled, addStore, setTaxCategory), which
+// check can() first.
 
 import {
   createAccount,
@@ -11,13 +12,21 @@ import {
   addStore,
   summarize,
   findStore,
+  setTaxCategory,
+  gstCategoryOf,
+  productLabel,
 } from './inventory.js';
-import { inr, $, h, toast, showErrors, formatTime } from './ui.js';
+import { GST_CATEGORIES, GST_SCHEDULE, formatRate } from './gst.js';
+import { inr, inrTax, $, h, toast, showErrors, formatTime } from './ui.js';
 import { generatePassword, makePasswordRecord } from './crypto.js';
 
 // ctx: { container, getState, getUser, write(apply, { errorBox, success }) -> result | null, resetData() }
+const TAX_ROWS = 100; // GST table: rows drawn at once; search finds the rest
+const categoryOption = (c) => `${c.name}${c.hsn ? ` (HSN ${c.hsn})` : ''}`;
+
 export function createAdminPanel(ctx) {
   const { container } = ctx;
+  let taxQuery = '';
   container.replaceChildren(buildSkeleton());
   bind();
 
@@ -114,6 +123,29 @@ export function createAdminPanel(ctx) {
               h('th', { scope: 'col', class: 'text-end' }, 'Actions'))),
             h('tbody', { id: 'loginsBody' })))));
 
+    const taxCard = h('section', { class: 'card', 'aria-labelledby': 'taxHeading' },
+      h('div', { class: 'card-header d-flex flex-wrap gap-2 align-items-center justify-content-between' },
+        h('h2', { id: 'taxHeading', class: 'h5 mb-0' }, 'GST (government rates)'),
+        h('input', { id: 'taxSearch', type: 'search', class: 'form-control form-control-sm tax-search', placeholder: 'Find a product, brand or SKU', 'aria-label': 'Find a product for GST', autocomplete: 'off' })),
+      h('div', { class: 'card-body' },
+        h('p', { class: 'small text-body-secondary' },
+          `Rates are set by the government (${GST_SCHEDULE}) and cannot be typed in. Each product only needs the right type; `,
+          'change it if a product is in the wrong type, and its rate follows. Prices include GST, as on the MRP. ',
+          'Bills already printed keep their rate.'),
+        h('div', { id: 'taxErrors', class: 'alert alert-danger d-none', role: 'alert' }),
+        h('div', { class: 'table-responsive tax-scroll' },
+          h('table', { class: 'table table-sm align-middle mb-0' },
+            h('caption', { class: 'visually-hidden' }, 'GST rate for every product'),
+            h('thead', {}, h('tr', {},
+              h('th', { scope: 'col' }, 'Product'),
+              h('th', { scope: 'col' }, 'SKU'),
+              h('th', { scope: 'col', class: 'text-end' }, 'Price incl. GST'),
+              h('th', { scope: 'col' }, 'Type of product (HSN)'),
+              h('th', { scope: 'col', class: 'text-end' }, 'GST rate'),
+              h('th', { scope: 'col', class: 'text-end' }, 'GST in price'))),
+            h('tbody', { id: 'taxBody' }))),
+        h('p', { id: 'taxCount', class: 'small text-body-secondary mt-2 mb-0', 'aria-live': 'polite' })));
+
     const resetCard = h('section', { class: 'card border-danger-subtle', 'aria-labelledby': 'resetHeading' },
       h('div', { class: 'card-body d-flex flex-wrap gap-3 align-items-center justify-content-between' },
         h('div', {},
@@ -126,6 +158,7 @@ export function createAdminPanel(ctx) {
       h('div', { class: 'col-12 col-lg-8' }, shopsCard),
       h('div', { class: 'col-12 col-lg-4' }, createCard),
       h('div', { class: 'col-12' }, loginsCard),
+      h('div', { class: 'col-12' }, taxCard),
       h('div', { class: 'col-12' }, resetCard));
   }
 
@@ -137,6 +170,34 @@ export function createAdminPanel(ctx) {
     renderShops();
     renderAccountShopSelect();
     renderAccounts();
+    renderTaxes();
+  }
+
+  function renderTaxes() {
+    const products = ctx.getState().products;
+    const q = taxQuery.trim().toLowerCase();
+    const matches = q
+      ? products.filter((p) => `${p.name}\n${p.brand}\n${p.sku}`.toLowerCase().includes(q))
+      : products;
+    const shown = matches.slice(0, TAX_ROWS);
+    $('taxBody').replaceChildren(...(shown.length ? shown.map((p) => {
+      const category = gstCategoryOf(p);
+      const gstInPrice = (p.price * category.rate) / (100 + category.rate);
+      return h('tr', {},
+        h('td', { class: 'product-name' }, h('div', {}, p.name), h('div', { class: 'product-brand' }, p.brand)),
+        h('td', {}, h('code', {}, p.sku)),
+        h('td', { class: 'text-end qty-cell' }, inr.format(p.price)),
+        h('td', {}, h('select', {
+          class: 'form-select form-select-sm tax-select',
+          'data-tax-sku': p.sku,
+          'aria-label': `Type of product for ${productLabel(p)}`,
+        }, GST_CATEGORIES.map((c) => h('option', { value: c.id, selected: c.id === category.id }, categoryOption(c))))),
+        h('td', { class: 'text-end qty-cell fw-semibold' }, formatRate(category.rate)),
+        h('td', { class: 'text-end qty-cell' }, inrTax.format(gstInPrice)));
+    }) : [h('tr', {}, h('td', { colspan: '6', class: 'text-center text-body-secondary py-3' }, 'No products match.'))]));
+    $('taxCount').textContent = matches.length > shown.length
+      ? `Showing ${shown.length} of ${matches.length} products. Search to find the others.`
+      : `${matches.length} product${matches.length === 1 ? '' : 's'}.`;
   }
 
   function renderShops() {
@@ -327,6 +388,27 @@ export function createAdminPanel(ctx) {
       if (enable) onSetDisabled(enable.dataset.enable, false);
     });
     $('resetBtn').addEventListener('click', onReset);
+    $('taxSearch').addEventListener('input', (e) => {
+      taxQuery = e.target.value;
+      renderTaxes();
+    });
+    // A type is saved as soon as it is picked; the rate follows from it.
+    $('taxBody').addEventListener('change', (e) => {
+      const select = e.target.closest('[data-tax-sku]');
+      if (!select) return;
+      const sku = select.dataset.taxSku;
+      const categoryId = select.value;
+      const p = ctx.getState().products.find((x) => x.sku === sku);
+      const c = GST_CATEGORIES.find((x) => x.id === categoryId);
+      const done = ctx.write((s) => setTaxCategory(s, ctx.getUser(), sku, categoryId), {
+        errorBox: 'taxErrors',
+        success: `${productLabel(p)} is now "${c.name}": GST ${formatRate(c.rate)}.`,
+      });
+      if (done) {
+        const again = document.querySelector(`[data-tax-sku="${CSS.escape(sku)}"]`);
+        if (again) again.focus(); // the table was redrawn; keep the keyboard place
+      }
+    });
   }
 
   return { render, hideNewLogin };

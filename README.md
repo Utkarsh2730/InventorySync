@@ -174,6 +174,7 @@ instead of mixing old cached files with new ones.
 | `css/style.css` | Custom styles, focus outlines, scroll boxes, alignment, `@media print` stylesheet. Shared by both pages and the React build. |
 | `js/inventory.js` | Pure rules, no DOM: `statusOf`, `can`, `checkout`, `transfer`, `receive`, `setReorderLevel`, `addProduct`, `setSelling`, `createAccount`, `resetAccountPassword`, `setAccountDisabled`, `signInAccount`, `userFromSession`, `suggestLoginId`, `addStore`, `filterRows`, plus read-only views. |
 | `js/store.js` | `load`, `save`, `reset`, `readLatest`, `subscribe` (BroadcastChannel and `storage` event). |
+| `js/gst.js` | The government's GST rates by type of product, each with its HSN code. The only place a rate is written. |
 | `js/bill.js` | The customer's bill (shop, bill number, date, items with brands, qty, rate, amount, total, payment). Shown after each sale and printed on its own. |
 | `js/export.js` | CSV export of the filtered rows (UTF-8 BOM, proper escaping, Blob download). |
 | `js/ui.js` | Shared page helpers: safe element builder, toasts, banners, error boxes, dark mode. |
@@ -245,6 +246,24 @@ Each shop numbers its own bills: `KORAMANGALA-0001`, `KORAMANGALA-0002`, and so 
 same write as the stock change, so two tabs selling at once never get the same number. The newest 300 bills are
 kept for reprinting, and each sale in the log records its bill number. The React version does not show bills yet.
 
+### GST (government rates)
+
+Nobody types a GST rate. Each product has a **type of product** (for example *Pulses (dal), pre-packaged and
+labelled, HSN 0713*), and its rate comes from the government table in `js/gst.js` (GST rates in force from
+22 September 2025: 0%, 5%, 18%; 40% for sin goods). When the GST Council changes a rate, change that one line in
+`js/gst.js`, bump the version number in `index.html`, and every product, shop and new bill follows. Bills already
+printed keep the rate they were made with.
+
+- **Add product** asks for the type of product; the form shows its HSN code and rate.
+- **Admin → GST (government rates)** lists every product with its type, rate and how much of the price is GST.
+  If a product is in the wrong type, pick the right one; the rate follows. Only the admin can do this.
+- Prices include GST, as on the MRP. The bill shows each item's HSN code and rate, and a GST summary per rate
+  (taxable value, CGST and SGST, which split the GST equally for a sale within the state).
+- Data saved before GST (version 3) is upgraded automatically: sample products get their type; any other product
+  starts at the standard 18% until the admin picks its type.
+- The table covers common grocery and household items. Check it with your accountant and add any types your
+  shops sell to `js/gst.js`.
+
 ### Speed with large stock lists
 
 - Stock rows are built once per saved change and shared by the table, cards, alerts and admin page.
@@ -285,6 +304,7 @@ the same browser.
 | 15 | **R9.** Type `toor` in Search (name), then `saffola` (brand), then pick a Store and Status = Low. | Table narrows; "Showing N of M items" updates. Each brand of an item is its own row. |
 | 16 | **R10.** With filters on, click **Export CSV**. Open it in Excel. | Same rows as the screen, with a Brand column; `₹` displays correctly; `Biscuits, Marie "Family Pack"` stays in one cell. |
 | 17a | **Bill.** Koramangala: add two items, choose **UPI**, type a customer name, **Checkout & bill**. Click **Print bill** → Save as PDF. Close it, refresh, click **Reprint last bill**. | The bill shows `KORAMANGALA-0001`, both items with brands, rate, amount, total and "UPI". The PDF has only the bill. The stock went down at checkout. Reprint shows the same bill; the next sale is `KORAMANGALA-0002`. |
+| 17b | **GST.** Admin → GST: Detergent shows HSN 3402, 18%; change Ragi Flour's type and back. Shop: sell Toor Dal, Detergent and Salt. | Bill shows HSN and GST for each item, and a GST summary with 0%, 5% and 18% rows (₹165 dal: taxable ₹157.14, CGST ₹3.93, SGST ₹3.93). A product cannot be added without a type of product. |
 | 17 | **Print / PDF** → Save as PDF. | Clean report: no navbar, buttons, filters or cart; header shows date and filters. |
 | 18 | **R8.** DevTools device toolbar at **375 px**, then **1366 px**. | No sideways page scroll. On laptops the page fits the screen and the table, alerts and cart scroll inside their own boxes. |
 | 19 | Toggle **Dark mode**, refresh. | Choice is remembered on both pages. |

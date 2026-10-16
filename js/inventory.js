@@ -12,13 +12,20 @@
 // A refused or invalid call returns { ok: false, errors: [...], state } where
 // `state` is the very same object that was passed in, untouched.
 
-export const DATA_VERSION = 3; // 2: products have brands, English-only names; 3: shop logins replace invite codes
+import { findGstCategory, formatRate, DEFAULT_GST_CATEGORY } from './gst.js';
+
+export { formatRate };
+
+export const DATA_VERSION = 4; // 2: brands, English-only names; 3: shop logins replace invite codes; 4: GST categories
 export const STATUSES = ['OK', 'Low', 'Out', 'Stopped'];
 export const MAX_QTY = 100000; // upper bound for any single quantity or level
 export const LOG_LIMIT = 1000; // keep only the newest log entries
 export const BILL_LIMIT = 300; // keep only the newest bills (for reprinting)
 export const PAYMENT_METHODS = ['Cash', 'UPI', 'Card'];
 export const CUSTOMER_MAX = 60; // characters for the optional customer name on a bill
+// GST: each product has a category from gst.js (the government's rates).
+// Prices are entered INCLUDING GST (as on the MRP); the bill shows how much
+// of each price is tax.
 
 export const ROLE_LABELS = { manager: 'Store Manager', buyer: 'Inventory Buyer', admin: 'Admin' };
 
@@ -32,6 +39,7 @@ export const ACTION_LABELS = {
   manageAccounts: 'manage shop logins',
   changeOwnPassword: 'change this login\'s password',
   addStore: 'add shops',
+  setTax: 'change GST categories',
 };
 
 // ---------------------------------------------------------------------------
@@ -70,7 +78,7 @@ export function can(user, action, storeId) {
     return ['receive', 'transfer', 'setReorder', 'addProduct'].includes(action);
   }
   if (user.role === 'admin') {
-    return ['receive', 'transfer', 'setReorder', 'addProduct', 'manageAccounts', 'addStore'].includes(action);
+    return ['receive', 'transfer', 'setReorder', 'addProduct', 'manageAccounts', 'addStore', 'setTax'].includes(action);
   }
   return false;
 }
@@ -102,6 +110,15 @@ function storeName(state, storeId) {
 
 // "Toor Dal 1 kg (Tata Sampann)": the brand tells apart the same item
 // stocked from different brands. Used in every message and button label.
+// A product's GST category and rate, always from the government table.
+export function gstCategoryOf(product) {
+  return findGstCategory(product && product.taxCategory) || findGstCategory(DEFAULT_GST_CATEGORY);
+}
+
+export function gstRateOf(product) {
+  return gstCategoryOf(product).rate;
+}
+
 export function productLabel(product) {
   if (!product) return '';
   return product.brand ? `${product.name} (${product.brand})` : product.name;
@@ -204,9 +221,26 @@ export function checkout(state, user, storeId, cart, details = {}) {
     next.stock[storeId][sku].qty -= qty;
     entries.push({ type: 'sale', storeId, sku, change: -qty, userId: user.id, bill: number });
     const p = findProduct(state, sku);
-    lines.push({ sku, name: p.name, brand: p.brand || '', qty, price: p.price, amount: money(qty * p.price) });
+    const amount = money(qty * p.price);
+    const { rate: gstRate, hsn } = gstCategoryOf(p);
+    const taxable = money((amount * 100) / (100 + gstRate)); // the price includes GST
+    lines.push({ sku, name: p.name, brand: p.brand || '', hsn, qty, price: p.price, amount, gstRate, taxable, tax: money(amount - taxable) });
   }
   addLog(next, entries);
+
+  // GST summary, one row per rate. Within a state, GST is split equally into
+  // CGST and SGST.
+  const byRate = new Map();
+  for (const l of lines) {
+    const t = byRate.get(l.gstRate) || { rate: l.gstRate, taxable: 0, tax: 0 };
+    t.taxable = money(t.taxable + l.taxable);
+    t.tax = money(t.tax + l.tax);
+    byRate.set(l.gstRate, t);
+  }
+  const taxes = [...byRate.values()].sort((a, b) => a.rate - b.rate).map((t) => {
+    const cgst = money(t.tax / 2);
+    return { ...t, cgst, sgst: money(t.tax - cgst) };
+  });
 
   const shop = findStore(state, storeId);
   const bill = {
@@ -221,6 +255,8 @@ export function checkout(state, user, storeId, cart, details = {}) {
     lines,
     itemCount: lines.reduce((sum, l) => sum + l.qty, 0),
     total: money(lines.reduce((sum, l) => sum + l.amount, 0)),
+    taxes,
+    taxTotal: money(taxes.reduce((sum, t) => sum + t.tax, 0)),
   };
   next.bills = [...(next.bills || []), bill].slice(-BILL_LIMIT);
   return { ok: true, errors: [], state: next, bill };
@@ -324,6 +360,7 @@ export function addProduct(state, user, input) {
   const brand = String((input && input.brand) || '').trim().replace(/\s+/g, ' ');
   const price = input && input.price;
   const reorderLevel = input && input.reorderLevel;
+  const taxCategory = input && input.taxCategory;
 
   const errors = [];
   if (!SKU_PATTERN.test(sku)) errors.push('SKU must be 2–24 characters: letters, digits and dashes, starting with a letter or digit.');
@@ -339,10 +376,11 @@ export function addProduct(state, user, input) {
     errors.push('Price must be a number from 0 to 1,00,00,000.');
   }
   if (!isNonNegativeInt(reorderLevel)) errors.push(`Reorder level must be a whole number from 0 to ${MAX_QTY}.`);
+  if (!findGstCategory(taxCategory)) errors.push('Choose the GST category (type of product). Its rate is set by the government.');
   if (errors.length > 0) return refuse(state, errors);
 
   const next = clone(state);
-  next.products.push({ sku, name, brand, price: Math.round(price * 100) / 100 });
+  next.products.push({ sku, name, brand, price: Math.round(price * 100) / 100, taxCategory });
   for (const store of next.stores) {
     next.stock[store.id][sku] = { qty: 0, reorderLevel };
   }
@@ -356,6 +394,24 @@ export function addProduct(state, user, input) {
 
 // selling = false marks the item as stopped at that shop: it leaves the
 // alerts and Low/Out counts and cannot be sold there. selling = true resumes it.
+// Head office corrects which GST category a product is in (for example a
+// product put in the wrong category). The rate itself always comes from the
+// government table, never from here. Applies to sales from now on; bills
+// already printed keep the rate they were made with.
+export function setTaxCategory(state, user, sku, categoryId) {
+  if (!can(user, 'setTax', null)) return refuse(state, [refusalMessage(state, user, 'setTax', null)]);
+  const product = findProduct(state, sku);
+  if (!product) return refuse(state, [`Unknown product "${sku}".`]);
+  const category = findGstCategory(categoryId);
+  if (!category) return refuse(state, [`Unknown GST category "${categoryId}".`]);
+  if (product.taxCategory === categoryId) return refuse(state, [`${productLabel(product)} is already in "${category.name}".`]);
+
+  const next = clone(state);
+  findProduct(next, sku).taxCategory = categoryId;
+  addLog(next, [{ type: 'adjust', storeId: null, sku, change: 0, note: `GST category ${category.name} (${formatRate(category.rate)})`, userId: user.id }]);
+  return { ok: true, errors: [], state: next };
+}
+
 export function setSelling(state, user, storeId, sku, selling) {
   if (!can(user, 'setSelling', storeId)) return refuse(state, [refusalMessage(state, user, 'setSelling', storeId)]);
 
@@ -606,6 +662,8 @@ function makeRows(state) {
         name: p.name,
         brand: p.brand || '',
         price: p.price,
+        gstRate: gstRateOf(p),
+        hsn: gstCategoryOf(p).hsn,
         qty,
         reorderLevel,
         stopped: Boolean(stopped),
@@ -676,6 +734,27 @@ export function defaultStoreFor(user) {
 
 // Brands of the sample products, used when upgrading data saved before
 // products had brands. Any other product gets "Unbranded".
+// GST category of each sample product, for data saved before version 4.
+const SAMPLE_GST = {
+  'TOOR-1KG': 'pulses-packed',
+  'TOOR-1KG-24M': 'pulses-packed',
+  'ATTA-5KG': 'atta-packed',
+  'BASM-5KG': 'rice-packed',
+  'SUNOIL-1L': 'oil-sunflower',
+  'SUNOIL-1L-SAF': 'oil-sunflower',
+  'SUGAR-1KG': 'sugar',
+  'SALT-1KG': 'salt',
+  'TEA-500G': 'tea',
+  'TEA-500G-RL': 'tea',
+  'MILK-500ML': 'milk',
+  'GHEE-500ML': 'ghee-butter',
+  'BISC-MARIE': 'biscuits',
+  'SOAP-4PK': 'soap',
+  'DET-1KG': 'detergent',
+  'RAGI-1KG': 'flour-other-packed',
+  'COFFEE-200G': 'coffee',
+};
+
 const SAMPLE_BRANDS = {
   'TOOR-1KG': 'Tata Sampann',
   'ATTA-5KG': 'Aashirvaad',
@@ -709,7 +788,7 @@ export function englishOnly(text) {
 export function upgradeData(data) {
   if (!data || typeof data !== 'object') return null;
   if (data.version === DATA_VERSION) return data;
-  if (![1, 2].includes(data.version) || !Array.isArray(data.products)) return null;
+  if (![1, 2, 3].includes(data.version) || !Array.isArray(data.products)) return null;
   const next = clone(data);
   if (next.version === 1) {
     // 1 -> 2: brands added, names kept in English only.
@@ -726,6 +805,15 @@ export function upgradeData(data) {
     next.version = 3;
     delete next.invites;
     if (!Array.isArray(next.accounts)) next.accounts = [];
+  }
+  if (next.version === 3) {
+    // 3 -> 4: every product gets a GST category. Sample products get theirs;
+    // anything else starts at the standard rate until head office checks it.
+    next.version = 4;
+    next.products = next.products.map((p) => ({
+      ...p,
+      taxCategory: findGstCategory(p.taxCategory) ? p.taxCategory : (SAMPLE_GST[p.sku] || DEFAULT_GST_CATEGORY),
+    }));
   }
   return next;
 }
@@ -744,6 +832,7 @@ export function isValidState(s) {
     for (const p of s.products) {
       if (!p || typeof p.sku !== 'string' || typeof p.name !== 'string' || typeof p.price !== 'number') return false;
       if (typeof p.brand !== 'string') return false;
+      if (!findGstCategory(p.taxCategory)) return false;
       const entry = perStore[p.sku];
       if (!entry || !isNonNegativeInt(entry.qty) || !isNonNegativeInt(entry.reorderLevel)) return false;
     }

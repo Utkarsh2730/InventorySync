@@ -30,21 +30,24 @@ import {
   productLabel,
   lastBill,
   BILL_LIMIT,
+  setTaxCategory,
+  gstRateOf,
 } from './inventory.js';
 import { generatePassword, makePasswordRecord, hashForAccount } from './crypto.js';
 import { escapeCsvCell, rowsToCsv } from './export.js';
+import { GST_CATEGORIES, findGstCategory } from './gst.js';
 
 // A small fixture: two stores, two products, two managers and a buyer.
 function makeState() {
   return {
-    version: 3,
+    version: 4,
     stores: [
       { id: 'A', name: 'Store A', city: 'Test' },
       { id: 'B', name: 'Store B', city: 'Test' },
     ],
     products: [
-      { sku: 'DAL', name: 'Toor Dal 1 kg', brand: 'Tata Sampann', price: 165 },
-      { sku: 'GHEE', name: 'Ghee, "Pure" 500 ml', brand: 'Amul', price: 340 },
+      { sku: 'DAL', name: 'Toor Dal 1 kg', brand: 'Tata Sampann', price: 165, taxCategory: 'pulses-packed' },
+      { sku: 'GHEE', name: 'Ghee, "Pure" 500 ml', brand: 'Amul', price: 340, taxCategory: 'ghee-butter' },
     ],
     stock: {
       A: { DAL: { qty: 3, reorderLevel: 5 }, GHEE: { qty: 0, reorderLevel: 2 } },
@@ -192,8 +195,8 @@ export function runTests() {
   check('Add product starts at 0 in every store and rejects duplicates', () => {
     const s = makeState();
     const b = user(s, 'buyer');
-    const r = addProduct(s, b, { sku: 'salt-1kg', name: 'Salt', brand: 'Tata Salt', price: 28, reorderLevel: 3 });
-    const dup = addProduct(r.state, b, { sku: 'SALT-1KG', name: 'Salt again', brand: 'Tata Salt', price: 28, reorderLevel: 3 });
+    const r = addProduct(s, b, { sku: 'salt-1kg', name: 'Salt', brand: 'Tata Salt', price: 28, reorderLevel: 3, taxCategory: 'biscuits' });
+    const dup = addProduct(r.state, b, { sku: 'SALT-1KG', name: 'Salt again', brand: 'Tata Salt', price: 28, reorderLevel: 3, taxCategory: 'biscuits' });
     return r.ok && r.state.stock.A['SALT-1KG'].qty === 0 && r.state.stock.B['SALT-1KG'].qty === 0 && !dup.ok;
   });
 
@@ -236,8 +239,8 @@ export function runTests() {
     const rows = filterRows(buildRows(makeState()), { storeId: 'A' });
     const one = rowsToCsv(rows, { includeChainTotal: false }).trim().split('\r\n');
     const all = rowsToCsv(rows).trim().split('\r\n');
-    return !one[0].includes('All stores total') && one[0].split(',').length === 9
-      && all[0].includes('All stores total') && all[0].split(',').length === 10
+    return !one[0].includes('All stores total') && one[0].split(',').length === 10
+      && all[0].includes('All stores total') && all[0].split(',').length === 11
       && one[0].includes('Brand') && one[1].includes('Tata Sampann');
   });
   check('R10: CSV starts with a UTF-8 BOM, has ₹ in the header and one line per row', () => {
@@ -250,22 +253,22 @@ export function runTests() {
   // --- Brands and English-only names ------------------------------------
   check('Brands: the same item from another brand is a separate product', () => {
     const s = makeState();
-    const r = addProduct(s, user(s, 'buyer'), { sku: 'DAL-24M', name: 'Toor Dal 1 kg', brand: '24 Mantra Organic', price: 189, reorderLevel: 2 });
+    const r = addProduct(s, user(s, 'buyer'), { sku: 'DAL-24M', name: 'Toor Dal 1 kg', brand: '24 Mantra Organic', price: 189, reorderLevel: 2, taxCategory: 'biscuits' });
     const rows = buildRows(r.state).filter((x) => x.storeId === 'A' && x.name === 'Toor Dal 1 kg');
     return r.ok && rows.length === 2 && rows.map((x) => x.brand).sort().join('|') === '24 Mantra Organic|Tata Sampann';
   });
   check('Brands: a product needs a brand, and the same name and brand cannot be added twice', () => {
     const s = makeState();
     const b = user(s, 'buyer');
-    return !addProduct(s, b, { sku: 'DAL-X', name: 'Toor Dal 1 kg', brand: '', price: 1, reorderLevel: 1 }).ok
-      && !addProduct(s, b, { sku: 'DAL-X', name: 'toor dal 1 KG', brand: 'TATA SAMPANN', price: 1, reorderLevel: 1 }).ok;
+    return !addProduct(s, b, { sku: 'DAL-X', name: 'Toor Dal 1 kg', brand: '', price: 1, reorderLevel: 1, taxCategory: 'biscuits' }).ok
+      && !addProduct(s, b, { sku: 'DAL-X', name: 'toor dal 1 KG', brand: 'TATA SAMPANN', price: 1, reorderLevel: 1, taxCategory: 'biscuits' }).ok;
   });
   check('English only: names and brands in another script are refused', () => {
     const s = makeState();
     const b = user(s, 'buyer');
-    return !addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice (बासमती)', brand: 'India Gate', price: 1, reorderLevel: 1 }).ok
-      && !addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice', brand: 'ಇಂಡಿಯಾ', price: 1, reorderLevel: 1 }).ok
-      && addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice 5 kg (Extra Long)', brand: "Daawat & Co.", price: 1, reorderLevel: 1 }).ok;
+    return !addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice (बासमती)', brand: 'India Gate', price: 1, reorderLevel: 1, taxCategory: 'biscuits' }).ok
+      && !addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice', brand: 'ಇಂಡಿಯಾ', price: 1, reorderLevel: 1, taxCategory: 'biscuits' }).ok
+      && addProduct(s, b, { sku: 'RICE-1', name: 'Basmati Rice 5 kg (Extra Long)', brand: "Daawat & Co.", price: 1, reorderLevel: 1, taxCategory: 'biscuits' }).ok;
   });
   check('Search matches the brand too, and messages name the brand', () => {
     const rows = buildRows(makeState());
@@ -283,7 +286,7 @@ export function runTests() {
     ];
     old.stock = { A: { 'BASM-5KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 2, reorderLevel: 1 } }, B: { 'BASM-5KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 2, reorderLevel: 1 } } };
     const up = upgradeData(old);
-    return up.version === 3 && isValidState(up) && old.version === 1
+    return up.version === 4 && isValidState(up) && old.version === 1
       && up.products[0].name === 'Basmati Rice 5 kg' && up.products[0].brand === 'India Gate'
       && up.products[1].name === 'Soap (4-pack)' && up.products[1].brand === 'Unbranded'
       && up.stock.A['MY-OWN'].qty === 2 && upgradeData({ version: 99 }) === null;
@@ -318,7 +321,7 @@ export function runTests() {
   });
   check('A shop manager can now add products', () => {
     const s = makeState();
-    return addProduct(s, user(s, 'mA'), { sku: 'TEA-1', name: 'Tea', brand: 'Red Label', price: 10, reorderLevel: 1 }).ok;
+    return addProduct(s, user(s, 'mA'), { sku: 'TEA-1', name: 'Tea', brand: 'Red Label', price: 10, reorderLevel: 1, taxCategory: 'biscuits' }).ok;
   });
 
   // --- Shop logins (Shop ID + password) and shops (admin) -----------------
@@ -434,7 +437,7 @@ export function runTests() {
     delete v2.accounts;
     v2.invites = [{ code: 'ABCD-EFGH-JKLM', role: 'manager', storeId: 'A', label: 'Old code', revoked: false }];
     const up = upgradeData(v2);
-    return up.version === 3 && !('invites' in up) && Array.isArray(up.accounts) && up.accounts.length === 0
+    return up.version === 4 && !('invites' in up) && Array.isArray(up.accounts) && up.accounts.length === 0
       && isValidState(up) && up.stock.A.DAL.qty === 3;
   });
   check('Admin can add a shop; it starts with every product at 0; duplicates are refused', () => {
@@ -494,6 +497,53 @@ export function runTests() {
       && r.state.bills.length === BILL_LIMIT && r.state.bills[0].number === 'OLD-1' && isValidState(r.state);
   });
 
+  // --- GST (rates from the government table in gst.js) --------------------
+  check('GST: a bill shows how much of each price is GST, split into CGST and SGST, with HSN codes', () => {
+    const s = makeState(); // DAL: packaged pulses 5%; GHEE: ghee 5%
+    s.products[1].taxCategory = 'detergent'; // 18%, to test two rates
+    s.stock.A.GHEE.qty = 5;
+    const b = checkout(s, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 2 }, { sku: 'GHEE', qty: 1 }]).bill;
+    const [five, eighteen] = b.taxes;
+    // ₹330 incl. 5%: taxable 314.29, GST 15.71; ₹340 incl. 18%: taxable 288.14, GST 51.86
+    return b.total === 670 && b.lines[0].gstRate === 5 && b.lines[0].hsn === '0713' && b.lines[1].hsn === '3402'
+      && b.lines[0].taxable === 314.29 && b.lines[0].tax === 15.71
+      && five.rate === 5 && five.taxable === 314.29 && five.cgst === 7.86 && five.sgst === 7.85
+      && eighteen.rate === 18 && eighteen.taxable === 288.14 && eighteen.tax === 51.86 && b.taxTotal === 67.57;
+  });
+  check('GST: the rate always comes from the government table; nobody can type a rate', () => {
+    const s = makeState();
+    const buyer = user(s, 'buyer');
+    const base = { sku: 'NEW-1', name: 'New item', brand: 'Brand', price: 10, reorderLevel: 1 };
+    const added = addProduct(s, buyer, { ...base, taxCategory: 'salt' });
+    const typedRate = addProduct(s, buyer, { ...base, taxCategory: 'salt', gstRate: 28 });
+    const p = added.state.products.at(-1);
+    return !addProduct(s, buyer, base).ok && !addProduct(s, buyer, { ...base, taxCategory: 'made-up' }).ok
+      && added.ok && gstRateOf(p) === 0 && !('gstRate' in p) && buildRows(added.state).at(-1).gstRate === 0
+      && gstRateOf(typedRate.state.products.at(-1)) === 0
+      && GST_CATEGORIES.every((c) => [0, 5, 18, 40].includes(c.rate)) && findGstCategory('detergent').rate === 18;
+  });
+  check('GST: only the admin re-classifies a product; old bills keep their rate', () => {
+    const s = makeState();
+    const sold = checkout(s, user(s, 'mA'), 'A', [{ sku: 'DAL', qty: 1 }]);
+    const r = setTaxCategory(sold.state, user(s, 'admin'), 'DAL', 'standard');
+    return !setTaxCategory(s, user(s, 'mA'), 'DAL', 'standard').ok && !setTaxCategory(s, user(s, 'buyer'), 'DAL', 'standard').ok
+      && !setTaxCategory(s, user(s, 'admin'), 'DAL', 'nope').ok && !setTaxCategory(s, user(s, 'admin'), 'NOPE', 'salt').ok
+      && r.ok && gstRateOf(r.state.products[0]) === 18 && r.state.bills[0].lines[0].gstRate === 5
+      && !setTaxCategory(r.state, user(s, 'admin'), 'DAL', 'standard').ok && isValidState(r.state);
+  });
+  check('GST: version 3 data gets categories (sample products their own, others the standard rate)', () => {
+    const v3 = makeState();
+    v3.version = 3;
+    v3.products = [
+      { sku: 'SALT-1KG', name: 'Iodised Salt 1 kg', brand: 'Tata Salt', price: 28 },
+      { sku: 'MY-OWN', name: 'My item', brand: 'Mine', price: 10 },
+    ];
+    v3.stock = { A: { 'SALT-1KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 1, reorderLevel: 1 } }, B: { 'SALT-1KG': { qty: 1, reorderLevel: 1 }, 'MY-OWN': { qty: 1, reorderLevel: 1 } } };
+    const up = upgradeData(v3);
+    return up.version === 4 && isValidState(up) && up.products[0].taxCategory === 'salt' && up.products[1].taxCategory === 'standard'
+      && !isValidState(v3);
+  });
+
   return results;
 }
 
@@ -505,7 +555,7 @@ export async function checkSampleData(url = 'data/sample-data.json') {
     const statuses = new Set(buildRows(data).map((r) => r.status));
     const englishOnly = data.products.every((p) => /^[\x20-\x7E]+$/.test(p.name) && /^[\x20-\x7E]+$/.test(p.brand));
     const twoBrands = data.products.some((p) => data.products.some((q) => q !== p && q.name === p.name && q.brand !== p.brand));
-    const passed = isValidState(data) && data.stores.length === 3 && Array.isArray(data.accounts) && data.accounts.length === 0
+    const passed = isValidState(data) && data.products.every((p) => findGstCategory(p.taxCategory)) && data.stores.length === 3 && Array.isArray(data.accounts) && data.accounts.length === 0
       && englishOnly && twoBrands && statuses.has('OK') && statuses.has('Low') && statuses.has('Out');
     return { name, passed, error: passed ? '' : 'sample data does not match' };
   } catch (err) {

@@ -15,22 +15,23 @@
     })();
   </script>
   <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css">
-  <link rel="stylesheet" href="css/style.css?v=2026-10-16-8">
+  <link rel="stylesheet" href="css/style.css?v=2026-10-16-11">
   <!-- One version for every script, so the browser never mixes an old cached page with
        newer code. Change ASSET_VERSION (here and in the src below) on every release. -->
   <script type="importmap">
   {
     "imports": {
-      "./js/app.js": "./js/app.js?v=2026-10-16-8",
-      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-8",
-      "./js/store.js": "./js/store.js?v=2026-10-16-8",
-      "./js/export.js": "./js/export.js?v=2026-10-16-8",
-      "./js/ui.js": "./js/ui.js?v=2026-10-16-8",
-      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-8",
-      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-8",
-      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-8",
-      "./js/bill.js": "./js/bill.js?v=2026-10-16-8",
-      "./js/tests.js": "./js/tests.js?v=2026-10-16-8"
+      "./js/app.js": "./js/app.js?v=2026-10-16-11",
+      "./js/inventory.js": "./js/inventory.js?v=2026-10-16-11",
+      "./js/store.js": "./js/store.js?v=2026-10-16-11",
+      "./js/export.js": "./js/export.js?v=2026-10-16-11",
+      "./js/ui.js": "./js/ui.js?v=2026-10-16-11",
+      "./js/crypto.js": "./js/crypto.js?v=2026-10-16-11",
+      "./js/admin-auth.js": "./js/admin-auth.js?v=2026-10-16-11",
+      "./js/admin-panel.js": "./js/admin-panel.js?v=2026-10-16-11",
+      "./js/bill.js": "./js/bill.js?v=2026-10-16-11",
+      "./js/gst.js": "./js/gst.js?v=2026-10-16-11",
+      "./js/tests.js": "./js/tests.js?v=2026-10-16-11"
     }
   }
   </script>
@@ -440,7 +441,7 @@
           </div>
           <div class="row g-3">
             <div class="col-6">
-              <label for="productPrice" class="form-label">Price (₹)</label>
+              <label for="productPrice" class="form-label">Price incl. GST (₹)</label>
               <input id="productPrice" type="number" class="form-control" required min="0" max="10000000" step="0.01" inputmode="decimal">
               <div class="invalid-feedback">Enter a price of 0 or more.</div>
             </div>
@@ -449,6 +450,14 @@
               <input id="productReorder" type="number" class="form-control" required min="0" max="100000" step="1" inputmode="numeric">
               <div class="invalid-feedback">Whole number, 0 or more.</div>
             </div>
+          </div>
+          <div class="mt-3">
+            <label for="productGst" class="form-label">Type of product (GST)</label>
+            <select id="productGst" class="form-select" required>
+              <option value="">Choose…</option>
+            </select>
+            <div class="invalid-feedback">Choose the type of product.</div>
+            <div class="form-text">The GST rate comes from the government's rate for this type of product. The price above includes GST, as on the MRP.</div>
           </div>
         </div>
         <div class="modal-footer">
@@ -465,7 +474,7 @@
   <div id="billSheet"></div>
 
   <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-  <script type="module" src="js/app.js?v=2026-10-16-8"></script>  <!-- ASSET_VERSION -->
+  <script type="module" src="js/app.js?v=2026-10-16-11"></script>  <!-- ASSET_VERSION -->
   <script>
     // Safety net: if app.js failed to start (for example the browser mixed old
     // and new cached files after a deploy), say so instead of showing a blank page.

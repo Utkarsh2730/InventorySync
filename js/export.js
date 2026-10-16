@@ -10,6 +10,7 @@ export const CSV_HEADERS = [
   'Product',
   'Brand',
   'Price (₹)',
+  'GST %',
   'Qty',
   'Reorder level',
   'Status',
@@ -39,7 +40,7 @@ export function toCsv(headers, records) {
 export function rowsToCsv(rows, { includeChainTotal = true } = {}) {
   const headers = includeChainTotal ? CSV_HEADERS : CSV_HEADERS.slice(0, -1);
   const records = rows.map((r) => {
-    const cells = [r.storeName, r.sku, r.name, r.brand, r.price, r.qty, r.reorderLevel, r.status, r.value];
+    const cells = [r.storeName, r.sku, r.name, r.brand, r.price, r.gstRate, r.qty, r.reorderLevel, r.status, r.value];
     if (includeChainTotal) cells.push(r.chainTotal);
     return cells;
   });

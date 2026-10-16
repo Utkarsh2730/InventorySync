@@ -28,9 +28,11 @@ import {
   disableAllAccounts,
   productLabel,
   lastBill,
+  formatRate,
   ADMIN_LOGIN_ID,
 } from './inventory.js';
 import { billElement } from './bill.js';
+import { GST_CATEGORIES, gstCategoryLabel } from './gst.js';
 import * as store from './store.js';
 import { downloadRowsAsCsv } from './export.js';
 import { bs, inr, $, h, showBanner, toast, showErrors, hideErrors, initTheme } from './ui.js';
@@ -365,7 +367,8 @@ function rowElement(r, may, chainTotalClass) {
     h('td', { class: 'product-name' },
       h('div', {}, r.name),
       h('div', { class: 'product-brand' }, r.brand)),
-    h('td', { class: 'text-end d-none d-xl-table-cell print-cell' }, inr.format(r.price)),
+    h('td', { class: 'text-end d-none d-xl-table-cell print-cell' }, inr.format(r.price),
+      h('span', { class: 'product-brand' }, `GST ${formatRate(r.gstRate)}`)),
     h('td', { class: 'text-end qty-cell fw-semibold' }, r.qty),
     h('td', { class: 'text-end qty-cell d-none d-xl-table-cell print-cell' }, r.reorderLevel),
     h('td', { class: 'text-center' }, statusBadge(r.status)),
@@ -713,6 +716,7 @@ function onProductSubmit(event) {
     brand: $('productBrand').value,
     price: Number($('productPrice').value),
     reorderLevel: Number($('productReorder').value),
+    taxCategory: $('productGst').value,
   };
   const ok = runWrite((s) => addProduct(s, currentUser, input), {
     errorBox: 'productErrors',
@@ -1157,6 +1161,7 @@ function bindEvents() {
 
 async function start() {
   initTheme();
+  $('productGst').append(...GST_CATEGORIES.map((c) => h('option', { value: c.id }, gstCategoryLabel(c))));
   if (!bs) {
     showBanner('Bootstrap 5.3.8 files were not found in vendor/bootstrap/. Layout, dialogs and the cart panel need them. See README → Setup.', 'danger');
   }

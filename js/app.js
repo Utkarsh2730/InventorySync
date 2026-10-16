@@ -746,9 +746,18 @@ function updateSignInMode() {
 // every shop login. Stock, shops and products are kept.
 function renderForgotPanel() {
   const panel = $('forgotPanel');
-  if (normalizeLoginId($('loginId').value) !== ADMIN_LOGIN_ID || !hasAdminPasscode()) {
+  const adminTyped = normalizeLoginId($('loginId').value) === ADMIN_LOGIN_ID;
+  if (adminTyped && !hasAdminPasscode()) {
+    // Nothing to reset: no passcode is saved in this browser yet.
     panel.replaceChildren(h('p', { class: 'small mb-0' },
-      'Ask head office to reset your password. They will give you a new one, and you can then change it to one only you know.'));
+      'No admin passcode is saved in this browser, so there is nothing to reset. Choose a new one in the two password boxes above and sign in.'));
+    return;
+  }
+  if (!adminTyped) {
+    // At /admin, point the admin at the right Shop ID; shops at / only see the shop advice.
+    panel.replaceChildren(h('p', { class: 'small mb-0' }, isAdminAddress()
+      ? 'Type admin as the Shop ID to reset the admin passcode.'
+      : 'Ask head office to reset your password. They will give you a new one, and you can then change it to one only you know.'));
     return;
   }
   panel.replaceChildren(h('form', { id: 'forgotForm', class: 'forgot-panel', novalidate: true },
@@ -908,7 +917,10 @@ function restoreUser() {
 
 function bindEvents() {
   $('signInForm').addEventListener('submit', onSignInSubmit);
-  $('loginId').addEventListener('input', updateSignInMode);
+  $('loginId').addEventListener('input', () => {
+    updateSignInMode();
+    if (!$('forgotPanel').classList.contains('d-none')) renderForgotPanel();
+  });
   $('loginPassword').addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
   $('loginPasswordConfirm').addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
   $('forgotToggle').addEventListener('click', (e) => {

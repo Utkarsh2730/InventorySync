@@ -2,14 +2,16 @@
 
 Multi-store stock sync with low-stock alerts for regional retail chains.
 
-There are two separate pages, and neither shows the other's sign-in:
+Everyone uses **one page** (`/`, `index.html`) and the same sign-in screen:
 
-| Page | Who | Signs in with |
-|------|-----|---------------|
-| **Shop page** `/` (`index.html`) | Each shop (Store Manager), or head office (Inventory Buyer) | A **Shop ID and password** created by the admin |
-| **Admin page** `/admin` (also `/admin/` or `/admin.html`) | Head-office admin | An **admin passcode** set on the first visit |
+| Who | Signs in with | Sees |
+|-----|---------------|------|
+| A shop (Store Manager) | The **Shop ID and password** the admin created | Its own shop's stock, cart, Stop / Resume, Add product |
+| Head office (Inventory Buyer) | A head-office **Shop ID and password** | All shops: Receive, Transfer, Reorder, Add product |
+| The admin (you) | Shop ID **`admin`** and the **admin passcode** | Everything head office sees, plus a **Shops & logins** view; switch with **Stock \| Shops & logins** in the navbar |
 
-The shop page never mentions or links to the admin page; bookmark `/admin` yourself.
+The sign-in screen shows no admin option, and the Shops & logins code is only loaded after the
+admin signs in, so shops never see it. Everyone can **Change password** from the navbar.
 
 Two front ends share the same rules, storage and data:
 
@@ -21,14 +23,13 @@ Two front ends share the same rules, storage and data:
 Both use the same localStorage key, so a sale in a React tab shows up in a vanilla tab and the other way round.
 
 **Live demo:** <https://utkarsh2730.github.io/InventorySync/>
-· Admin: <https://utkarsh2730.github.io/InventorySync/admin.html>
 · React version: <https://utkarsh2730.github.io/InventorySync/react-app/>
 · Tests: <https://utkarsh2730.github.io/InventorySync/tests.html>
 · Vercel: <https://inventory-sync-lovat.vercel.app>
 
 > **Browser-only demo.** There is no server: stock, shops, shop logins and the admin passcode
 > live in each browser's own storage. A shop login therefore works **only in the browser where
-> the admin created it** (open the admin page and the shop page in two tabs of the same browser).
+> the admin created it** (for testing, sign in as admin in one tab and as a shop in another tab of the same browser).
 > Passwords and the passcode are stored only as salted PBKDF2 hashes (never as typed), but anyone with this browser's developer tools
 > can change stored data. Real shop accounts on their own phones need the pilot's server-side
 > sign-in (R11, Supabase).
@@ -70,7 +71,7 @@ ES modules do not load from `file://`, so use a local web server:
    (or `localhost:5500`).
 4. Open `http://127.0.0.1:5500/tests.html` to run the critical-path checks. Every line should say PASS.
 5. The built React version is at `http://127.0.0.1:5500/react-app/`.
-6. The admin page is at `http://127.0.0.1:5500/admin.html` (see 1.5 for the first run).
+6. Sign in as the admin with the Shop ID `admin` (see 1.5 for the first run).
 
 ### 1.3 React version (Node.js 20.19+ or 22.12+)
 
@@ -116,34 +117,43 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 
 ### 1.5 First run: admin passcode and shop logins
 
-1. Open `/admin` (or `/admin.html`). On the first visit in a browser it asks you to **set an
-   admin passcode** (at least 8 characters). The passcode belongs to that browser only.
-2. In **Create shop login**, choose a shop (or **Head office** for the buyer's all-shops view).
-   The name fills in by itself (you can change it). Click **Generate Shop ID and password**.
+1. Open `/`. In the sign-in form type the Shop ID **`admin`**. The first time in a browser a
+   second password box appears: choose the **admin passcode** (at least 8 characters), type it
+   twice and click **Save password and sign in**. The passcode belongs to that browser only.
+   From then on, sign in with `admin` and that passcode.
+2. Click **Shops & logins** in the navbar. In **Create shop login**, choose a shop (or
+   **Head office** for the buyer's all-shops view). The name fills in by itself. Click
+   **Generate Shop ID and password**.
 3. The page shows the **Shop ID** (made from the shop name, e.g. `koramangala`) and a random
    **password** (e.g. `Xk7m-Pq4z-R9tw`) with Copy buttons. The password is shown **only once**
    and is never stored, only its salted hash. Give both to the shop.
-4. Open `/` in another tab of the same browser and sign in with them. The Shop ID is not case
-   sensitive; the password is.
-5. In **Shop logins**: **Reset password** makes a new password (shown once) and signs the shop
-   out; **Disable** signs the shop out and blocks sign-in until you **Enable** it again. The
-   table shows when each login last signed in.
-6. **Add shop** creates a new shop with every product at 0. Then create a login for it.
-7. **Reset data** (admin page only) restores the sample stock and deletes added shops and all logins.
-8. **Forgot passcode?** on the admin sign-in screen lets you set a new passcode after typing
-   `RESET`. Because there is no server to prove who is asking, it also **disables every shop
-   login** (shops are signed out). Afterwards you can enable each login again or reset its
-   password. Stock, shops and products are kept.
+4. The shop signs in on the same page (for testing: another tab of the same browser). The Shop
+   ID is not case sensitive; the password is.
+5. **The shop sets its own password:** until it does, it sees "You are using a password from
+   head office" with a **Change password** button. **Change password** (navbar) asks for the
+   current password and a new one twice (at least 8 characters, different from the current
+   one). Other tabs signed in with the old password are signed out. The admin's **Password**
+   column shows "From head office" or "Changed by shop".
+6. In **Shop logins**: **Reset password** makes a new temporary password (shown once) and signs
+   the shop out; **Disable** signs the shop out and blocks sign-in until you **Enable** it
+   again. The table shows when each login last signed in.
+7. **Add shop** creates a new shop with every product at 0. Then create a login for it.
+8. **Reset data** (Shops & logins only) restores the sample stock and deletes added shops and all logins.
+9. **Forgot password?** under the sign-in form: shops are told to ask head office for a reset.
+   With the Shop ID `admin` typed, it offers to start over after typing `RESET`. Because there
+   is no server to prove who is asking, that also **disables every shop login** (shops are
+   signed out). Afterwards sign in as `admin` with a new passcode and enable each login again
+   or reset its password. Stock, shops and products are kept.
+10. The old `/admin`, `/admin/` and `/admin.html` addresses now open the main page.
 
-**Can't open the admin page?**
+**Can't sign in?**
 
 | What you see | Fix |
 |--------------|-----|
-| 404 "Not Found" | Use `/admin`, `/admin/` or `/admin.html` (all three work). Check the spelling: it is lower case. |
-| "Set up the admin passcode" although you set one | You are in a different browser, profile or private window. The passcode, shops and logins live in the browser where you created them. |
-| "That passcode is not right" and you forgot it | Click **Forgot passcode?** (see step 8). |
-| A shop sees "Wrong Shop ID or password" | Check the Shop ID in **Shop logins**. If the password is lost, use **Reset password** and give the shop the new one. |
-| "This browser cannot run the admin page securely here" | Open the site over `https://` or from `localhost`/`127.0.0.1`. A phone opening Live Server through a `http://192.168…` address is not a secure page, so the passcode cannot be protected. |
+| Typing `admin` shows "Type the password again" although you set a passcode | You are in a different browser, profile or private window. The passcode, shops and logins live in the browser where you created them. |
+| "Wrong Shop ID or password" as admin and you forgot the passcode | Use **Forgot password?** with the Shop ID `admin` (see step 9). |
+| A shop sees "Wrong Shop ID or password" | Check the Shop ID in **Shops & logins**. If the password is lost, use **Reset password** and give the shop the new one. |
+| "This page cannot check passwords here" | Open the site over `https://` or from `localhost`/`127.0.0.1`. A phone opening Live Server through a `http://192.168…` address is not a secure page, so passwords cannot be protected. |
 | A blank page or "did not start" | Press Ctrl+Shift+R (Cmd+Shift+R on a Mac) to reload without the cache. |
 
 ---
@@ -153,21 +163,21 @@ All paths in the app are relative, so it works from the `/inventorysync/` sub-pa
 | File | Purpose |
 |------|---------|
 | `index.html` | Shop page: Shop ID and password sign-in, 4 summary cards, stock table, alert panel, cart (offcanvas on phones), modals for Receive, Transfer, Reorder level and Add product. |
-| `admin.html` | Admin page: passcode sign-in (with Forgot passcode?), shops overview, Add shop, Create shop login (Shop ID + password, shown once), Shop logins (Reset password / Disable / Enable), Reset data. |
-| `admin/index.html` | Sends `/admin/` to `admin.html` on any host. `vercel.json` also redirects `/admin` and `/admin/`. |
+| `admin.html`, `admin/index.html` | Old addresses of the former admin page; they open the main page. `vercel.json` also redirects `/admin`, `/admin/` and `/admin.html` to `/`. |
 | `css/style.css` | Custom styles, focus outlines, scroll boxes, alignment, `@media print` stylesheet. Shared by both pages and the React build. |
 | `js/inventory.js` | Pure rules, no DOM: `statusOf`, `can`, `checkout`, `transfer`, `receive`, `setReorderLevel`, `addProduct`, `setSelling`, `createAccount`, `resetAccountPassword`, `setAccountDisabled`, `signInAccount`, `userFromSession`, `suggestLoginId`, `addStore`, `filterRows`, plus read-only views. |
 | `js/store.js` | `load`, `save`, `reset`, `readLatest`, `subscribe` (BroadcastChannel and `storage` event). |
 | `js/export.js` | CSV export of the filtered rows (UTF-8 BOM, proper escaping, Blob download). |
 | `js/ui.js` | Shared page helpers: safe element builder, toasts, banners, error boxes, dark mode. |
 | `js/app.js` | Shop page: draws the screen and handles clicks. |
-| `js/admin.js` | Admin page: passcode, shops, shop logins. |
+| `js/admin-auth.js` | The admin passcode (sign-in with Shop ID `admin`, first set-up, change, forget). |
+| `js/admin-panel.js` | The admin's **Shops & logins** view: shops, Create shop login, Reset password / Disable / Enable, Reset data. Loaded only after the admin signs in. |
 | `js/crypto.js` | Passwords: random password generator and salted PBKDF2-SHA-256 hashing (Web Crypto). Used by both pages and the React build. |
 | `js/tests.js`, `tests.html` | Browser tests, no library. In-memory data only. |
 | `data/sample-data.json` | 3 shops, 17 products (each with a brand; Toor Dal, Sunflower Oil and Assam Tea come from two brands), stock; no users or logins (the admin creates logins). |
 | `vendor/bootstrap/` | Bootstrap 5.3.8 CSS and JS bundle. |
 | `react/` | React + Vite source of the shop page: `src/App.jsx`, `src/useInventory.js` (wraps `store.js`), `src/components/`. |
-| `react-app/` | Built React site (output of `npm run build`). The admin page is the vanilla `admin.html` for both. |
+| `react-app/` | Built React site (output of `npm run build`). It supports the same sign-in (including `admin`) and Change password; for Shops & logins the admin follows a link to the main page. |
 
 ### Data (one localStorage key: `inventorysync:v1`)
 
@@ -182,19 +192,21 @@ Each product is `{ sku, name, brand, price }` (data version 2). A stock entry ca
 `"stopped": true` when that shop has stopped selling the item.
 
 Other keys: `inventorysync:theme` (localStorage, dark/light choice), `inventorysync:admin`
-(localStorage, the admin passcode's salt and PBKDF2 hash), `inventorysync:shopSession` (the Shop ID and password hash, never the password) and
-`inventorysync:adminSession` (sessionStorage, who is signed in on that tab).
+(localStorage, the admin passcode's salt and PBKDF2 hash) and `inventorysync:shopSession` (sessionStorage:
+the Shop ID and password hash of the login on that tab, never the password). A shop login can also have
+`"tempPassword": true` while it still uses a password made by head office.
 
 ### Roles: `can(user, action, storeId)`
 
-| Action (`can` name) | Shop (Store Manager login) | Head office (Inventory Buyer login) | Admin |
+| Action (`can` name) | Shop (Store Manager login) | Head office (Inventory Buyer login) | Admin (`admin`) |
 |---------------------|---------------------------|-------------------------------------|-------|
 | `sell`              | own shop only | never | never |
-| `receive`           | own shop only | any shop | never |
-| `transfer`          | never | any shop | never |
-| `setReorder`        | never | any shop | never |
-| `addProduct`        | yes (chain-wide) | yes (chain-wide) | never |
+| `receive`           | own shop only | any shop | any shop |
+| `transfer`          | never | any shop | any shop |
+| `setReorder`        | never | any shop | any shop |
+| `addProduct`        | yes (chain-wide) | yes (chain-wide) | yes (chain-wide) |
 | `setSelling` (Stop / Resume) | own shop only | never | never |
+| `changeOwnPassword` | yes | yes | its passcode, through Change password |
 | `manageAccounts`, `addStore` | never | never | yes |
 
 `can()` is the first check in every write function in `inventory.js`. Hidden buttons are only a
@@ -222,13 +234,13 @@ toolbar lists all of them in one click; **Resume** puts an item back on sale.
 
 ## 3. Manual demo / test script
 
-Start on the admin page: **Reset data**, then create one login for **Koramangala**, one for
-**Indiranagar** and one for **Head office** (see 1.5). Use them on the shop page in other tabs of
+Sign in as `admin` (see 1.5), open **Shops & logins**, click **Reset data**, then create one login
+for **Koramangala**, one for **Indiranagar** and one for **Head office**. Use them in other tabs of
 the same browser.
 
 | # | Steps | Expected |
 |---|-------|----------|
-| 1 | Shop page: sign in with the **Koramangala** Shop ID and password (try a wrong password first: "Wrong Shop ID or password"). | The Store filter starts on Koramangala: table, summary (3 Low, 1 Out) and alerts show Koramangala only. Rows have Add to cart, Receive and Stop. There is no admin sign-in, user switcher or Reset button. |
+| 1 | Shop page: sign in with the **Koramangala** Shop ID and password (try a wrong password first: "Wrong Shop ID or password"). | The Store filter starts on Koramangala: table, summary (3 Low, 1 Out) and alerts show Koramangala only. Rows have Add to cart, Receive and Stop. There is no admin option, view switch, user switcher or Reset button. A yellow reminder asks the shop to change the head-office password. |
 | 2 | **R1.** *Toor Dal 1 kg* from **Tata Sampann** has 3. Add it to the cart twice, then **Checkout**. | "Sale recorded". Qty is now 1, status Low. The 24 Mantra Organic Toor Dal is a separate row and is not affected. |
 | 3 | Add Toor Dal once, change the cart quantity to **2**, **Checkout**. | Refused: "only 1 in stock … cannot sell 2". Qty stays 1. |
 | 4 | Put a valid line and an oversized line in the cart, **Checkout**. | Whole sale refused; neither quantity changes. |
@@ -239,8 +251,8 @@ the same browser.
 | 9 | **R6.** Head office: try to sell. | No cart is shown; `checkout` refuses a buyer (see `tests.html`). |
 | 10 | Koramangala shop: **Add product** (e.g. `SALT-500G`). | The new product appears at 0 (Out) in every shop. |
 | 11 | **Stop selling.** Koramangala: click **Stop** on any row, then **Stopped selling (1)**. | The item leaves the list and the alerts; the button lists it with a **Resume** button. Resume puts it back. |
-| 12 | **Reset password / Disable.** Admin page: **Reset password** for `koramangala`, then **Disable** it, then **Enable** it. | Reset: the Koramangala tab is signed out at once; the old password fails and the new one works. Disable: signed out, and signing in says "disabled". Enable: signing in works again. |
-| 13 | **Add shop.** Admin page: add "Whitefield", create a login for it, sign in with it. | Whitefield appears in the shops table and on the shop page with every product at 0. |
+| 12 | **Reset password / Disable.** Shops & logins: **Reset password** for `koramangala`, then **Disable** it, then **Enable** it. | Reset: the Koramangala tab is signed out at once; the old password fails and the new one works. Disable: signed out, and signing in says "disabled". Enable: signing in works again. |
+| 13 | **Add shop.** Shops & logins: add "Whitefield", create a login for it, sign in with it. | Whitefield appears in the shops table and on the shop page with every product at 0. |
 | 14 | **R7.** Refresh any tab. | Changes and sign-ins (per tab) are kept. Admin **Reset data** restores the sample and signs every shop out. |
 | 15 | **R9.** Type `toor` in Search (name), then `saffola` (brand), then pick a Store and Status = Low. | Table narrows; "Showing N of M items" updates. Each brand of an item is its own row. |
 | 16 | **R10.** With filters on, click **Export CSV**. Open it in Excel. | Same rows as the screen, with a Brand column; `₹` displays correctly; `Biscuits, Marie "Family Pack"` stays in one cell. |
@@ -248,7 +260,9 @@ the same browser.
 | 18 | **R8.** DevTools device toolbar at **375 px**, then **1366 px**. | No sideways page scroll. On laptops the page fits the screen and the table, alerts and cart scroll inside their own boxes. |
 | 19 | Toggle **Dark mode**, refresh. | Choice is remembered on both pages. |
 | 20 | Keyboard only: Tab through both pages. | Every control is reachable with a visible focus outline. |
-| 21 | **React.** Open `react-app/` and repeat steps 1–4 and 11–12. | Same behaviour; the React tab and the shop page update each other. |
+| 21 | **React.** Open `react-app/` and repeat steps 1–4, 11–12 and 22. | Same behaviour; the React tab and the shop page update each other. |
+| 22 | **Change password.** Koramangala: **Change password**; try a wrong current password, then a good new one. Sign out and back in. | Wrong current: refused. Good: the reminder disappears; the old password stops working and the new one works; Shops & logins shows "Changed by shop". |
+| 23 | **Admin view switch.** As `admin`, click **Stock** and **Shops & logins**. | One page: the stock dashboard (all shops, Receive/Transfer/Reorder/Add product) and the Shops & logins view; no second page or tab needed. |
 
 ---
 
@@ -261,8 +275,8 @@ the same browser.
 | R3 | Transfers keep the total | `transfer()` in `inventory.js`; Transfer modal | Test “R3”; demo step 7 |
 | R4 | Changes appear in other tabs within 1 s | `save()` posts on BroadcastChannel `inventorysync`; `subscribe()` (+ `storage` fallback) in `js/store.js` | Demo step 6 |
 | R5 | Low/Out alerts update immediately | `statusOf()`, `alertsOf()`, `summarize()`; `renderAlerts()` / `renderCards()` | Test “Status …”, “R5”; demo step 8 |
-| R6 | Role-based permissions | `can()` first in every write function; Shop ID + password sign-in (`signInAccount`, `userFromSession`, PBKDF2 hashes in `crypto.js`) on the shop page; separate admin page with a PBKDF2 passcode | Tests “R6 …”, “Logins …”, “Passwords …”; demo steps 1, 8, 9, 12 |
-| R7 | Persistence, sample data, reset | `load()`, `save()`, `reset()` in `store.js`; `data/sample-data.json`; Reset on the admin page | Demo step 14 |
+| R6 | Role-based permissions | `can()` first in every write function; Shop ID + password sign-in (`signInAccount`, `userFromSession`, PBKDF2 hashes in `crypto.js`) on the shop page; admin signs in on the same page (Shop ID `admin`, PBKDF2 passcode in `admin-auth.js`); Change password (`changeOwnPassword`) | Tests “R6 …”, “Logins …”, “Change password …”, “Passwords …”; demo steps 1, 8, 9, 12, 22 |
+| R7 | Persistence, sample data, reset | `load()`, `save()`, `reset()` in `store.js`; `data/sample-data.json`; Reset in Shops & logins | Demo step 14 |
 | R8 | 1366 px and 375 px, no sideways scroll | Bootstrap grid (`col-12 col-sm-6 col-lg-3` cards, `col-lg-9` / `col-lg-3` columns), `table-responsive` scroll box, `offcanvas-lg` cart, `min-width:0` / `overflow-wrap` in `css/style.css` | Demo step 15 |
 | R9 | Search and filters | `filterRows()` in `inventory.js`; input group + selects in `index.html` | Test “R9”; demo step 12 |
 | R10 | CSV export, PDF via print | `js/export.js` (`rowsToCsv`, `downloadRowsAsCsv`); `@media print` in `style.css` | Tests “R10”; demo steps 13–14 |

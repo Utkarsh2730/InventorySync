@@ -15,6 +15,19 @@
   overflow-wrap: anywhere;
 }
 
+/* Phone / tablet navbar menu: one clean column. */
+@media (max-width: 991.98px) {
+  #userControls {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  #viewSwitch .btn,
+  .user-buttons .btn {
+    flex: 1 1 0;
+  }
+}
+
 /* Items a shop has stopped selling are greyed out. */
 .row-stopped td:not(.actions-cell) {
   color: var(--bs-secondary-color);

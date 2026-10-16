@@ -1,10 +1,11 @@
-// crypto.js: password helpers shared by the admin page, the shop page and the
+// crypto.js: password helpers shared by the main page (shops and admin) and the
 // React build. Uses the browser's Web Crypto API (needs https or localhost).
 //
 // Passwords are never stored. We store a random salt and a PBKDF2-SHA-256
 // hash; signing in hashes the typed password with the same salt and compares.
 
 export const PASSWORD_ITERATIONS = 150000;
+export const MIN_PASSWORD_LENGTH = 8; // for passwords people choose themselves
 
 // No 0/O, 1/l/I: easy to read out and type.
 const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';

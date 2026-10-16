@@ -24,21 +24,32 @@ import {
   normalizeLoginId,
   userFromSession,
   signInAccount,
+  changeOwnPassword,
+  disableAllAccounts,
   productLabel,
+  ADMIN_LOGIN_ID,
 } from './inventory.js';
 import * as store from './store.js';
 import { downloadRowsAsCsv } from './export.js';
 import { bs, inr, $, h, showBanner, toast, showErrors, hideErrors, initTheme } from './ui.js';
-import { hashForAccount, isCryptoAvailable } from './crypto.js';
+import { hashForAccount, isCryptoAvailable, makePasswordRecord, MIN_PASSWORD_LENGTH } from './crypto.js';
+import { ADMIN_USER, hasAdminPasscode, hashAdminPasscode, saveAdminPasscode, clearAdminPasscode, isAdminSession } from './admin-auth.js';
 
-// sessionStorage: { loginId, hash } of the shop login this tab signed in
-// with. The user is worked out from it on every redraw, so a disabled login
-// or a new password from the admin page signs the shop out straight away.
+// sessionStorage: { loginId, hash } of the login this tab signed in with.
+// The user is worked out from it on every redraw, so a disabled login or a
+// changed password signs other tabs out straight away.
+//
+// Everyone signs in on the same screen. The head-office admin uses the Shop
+// ID "admin" and the admin passcode; there is no separate admin page and no
+// visible admin option. The admin's "Shops & logins" view (admin-panel.js)
+// is only loaded after the admin signs in.
 const SESSION_KEY = 'inventorysync:shopSession';
 
 let state = null; // the whole saved data object
 let session = null; // { loginId, hash } or null
 let currentUser = null;
+let view = 'stock'; // admin only: 'stock' or 'manage' (Shops & logins)
+let adminPanel = null; // loaded on first use by the admin
 const cart = new Map(); // sku -> qty, always for the signed-in manager's own store (kept in memory, per tab)
 const filters = { query: '', storeId: 'all', status: 'all' };
 let visibleRows = []; // rows currently shown in the table (also what CSV exports)
@@ -87,35 +98,57 @@ function userLabel(u) {
 // Writes: always re-read, apply a rule from inventory.js, save once
 // ---------------------------------------------------------------------------
 
+// Who this tab is signed in as: a shop or head-office login from the shared
+// data, or the admin (checked against the admin passcode).
+function resolveUser() {
+  if (!session) return null;
+  if (session.loginId === ADMIN_LOGIN_ID) return isAdminSession(session.hash) ? ADMIN_USER : null;
+  return userFromSession(state, session.loginId, session.hash);
+}
+
+function isAdmin() {
+  return Boolean(currentUser && currentUser.role === 'admin');
+}
+
+function saveSession(next) {
+  session = next;
+  try {
+    if (next) sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // sessionStorage blocked: sign in again after a refresh
+  }
+}
+
 // Re-read the newest saved data so another tab's sale is never overwritten.
 function refreshFromStorage() {
   const latest = store.readLatest();
   if (latest) {
     state = latest;
-    currentUser = session ? userFromSession(state, session.loginId, session.hash) : null;
+    currentUser = resolveUser();
   }
 }
 
 // apply(state) must return { ok, errors, state } from inventory.js.
-// Returns true when the change was applied and saved.
+// Returns the result when the change was applied and saved, otherwise null.
 function runWrite(apply, { errorBox, success }) {
   refreshFromStorage();
   const result = apply(state);
   if (!result.ok) {
     showErrors(errorBox, result.errors);
     render();
-    return false;
+    return null;
   }
   const saved = store.save(result.state);
   if (!saved.ok) {
     showErrors(errorBox, [saved.error]);
-    return false;
+    return null;
   }
   state = result.state;
   hideErrors(errorBox);
   render();
-  toast(success, 'success');
-  return true;
+  if (success) toast(success, 'success');
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,11 +158,16 @@ function runWrite(apply, { errorBox, success }) {
 function render() {
   const focusKey = focusKeyOf(document.activeElement);
   const signedIn = Boolean(currentUser);
+  const managing = signedIn && isAdmin() && view === 'manage';
   $('signInScreen').classList.toggle('d-none', signedIn);
-  $('appScreen').classList.toggle('d-none', !signedIn);
+  $('appScreen').classList.toggle('d-none', !signedIn || managing);
+  $('manageScreen').classList.toggle('d-none', !managing);
   $('userControls').classList.toggle('d-none', !signedIn);
 
-  if (signedIn) {
+  if (managing) {
+    renderWho();
+    renderManage();
+  } else if (signedIn) {
     renderWho();
     renderToolbar();
     renderCards();
@@ -146,7 +184,46 @@ function render() {
 // Signed-in shop shown in the navbar (no user switcher: each shop signs in
 // with its own Shop ID and password).
 function renderWho() {
-  $('whoAmI').textContent = userLabel(currentUser);
+  $('whoAmI').textContent = isAdmin() ? 'Admin · head office' : userLabel(currentUser);
+  // View switch: admin only.
+  $('viewSwitch').classList.toggle('d-none', !isAdmin());
+  for (const b of $('viewSwitch').querySelectorAll('[data-view]')) b.setAttribute('aria-pressed', String(b.dataset.view === view));
+  // Remind a shop to replace a password made by head office.
+  const account = !isAdmin() && session ? findAccount(state, session.loginId) : null;
+  $('tempPasswordNotice').classList.toggle('d-none', !(account && account.tempPassword));
+}
+
+// The admin's Shops & logins view, loaded the first time it is opened.
+function renderManage() {
+  if (adminPanel) {
+    adminPanel.render();
+    return;
+  }
+  import('./admin-panel.js').then(({ createAdminPanel }) => {
+    if (adminPanel || !isAdmin()) return;
+    adminPanel = createAdminPanel({
+      container: $('manageScreen'),
+      getState: () => state,
+      getUser: () => currentUser,
+      write: runWrite,
+      resetData,
+    });
+    if (view === 'manage') adminPanel.render();
+  }).catch((err) => showBanner(`Could not open Shops & logins: ${err.message}`, 'danger'));
+}
+
+// Admin: restore the sample data (shops and logins are deleted).
+async function resetData() {
+  try {
+    const { state: fresh, notice } = await store.reset();
+    state = fresh;
+    cart.clear();
+    render();
+    if (notice) showBanner(notice);
+    else toast('Sample data restored.');
+  } catch (err) {
+    toast(`Reset failed: ${err.message}`, 'danger');
+  }
 }
 
 function renderToolbar() {
@@ -545,11 +622,18 @@ function onProductSubmit(event) {
 // Users and theme
 // ---------------------------------------------------------------------------
 
-// Shop sign-in with the Shop ID and password from head office. The password
-// is hashed here (crypto.js) with the account's salt; inventory.js compares.
+// Sign-in for everyone: shops and head office with their Shop ID and
+// password, the admin with the Shop ID "admin" and the admin passcode. The
+// password is hashed here (crypto.js); inventory.js compares hashes.
 async function onSignInSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const loginId = normalizeLoginId($('loginId').value);
+  const password = $('loginPassword').value;
+  const settingUp = loginId === ADMIN_LOGIN_ID && !hasAdminPasscode();
+  // Checked here, not only by the minlength attribute (which browsers apply to typed text only).
+  $('loginPassword').setCustomValidity(settingUp && password.length < MIN_PASSWORD_LENGTH ? `At least ${MIN_PASSWORD_LENGTH} characters.` : '');
+  $('loginPasswordConfirm').setCustomValidity(settingUp && $('loginPasswordConfirm').value !== password ? 'Passwords do not match.' : '');
   form.classList.add('was-validated');
   if (!form.checkValidity()) return;
   if (!isCryptoAvailable()) {
@@ -559,53 +643,193 @@ async function onSignInSubmit(event) {
   const submit = $('signInSubmit');
   submit.disabled = true;
   try {
-    refreshFromStorage(); // a login created a moment ago in the admin tab must work
-    const loginId = normalizeLoginId($('loginId').value);
-    const account = findAccount(state, loginId);
-    const hash = account ? await hashForAccount($('loginPassword').value, account) : null;
-    refreshFromStorage(); // hashing takes a moment; use the newest data
-    const result = signInAccount(state, loginId, hash, new Date().toISOString());
-    if (!result.ok) {
-      showErrors('signInErrors', result.errors);
-      $('loginPassword').value = '';
-      $('loginPassword').focus();
-      return;
-    }
-    const saved = store.save(result.state);
-    if (!saved.ok) {
-      showErrors('signInErrors', [saved.error]);
-      return;
-    }
-    state = result.state;
-    session = { loginId, hash };
-    currentUser = result.user;
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    } catch {
-      // sessionStorage blocked: the shop has to sign in again after a refresh
+    if (loginId === ADMIN_LOGIN_ID) {
+      // First time: the password typed (twice) becomes the admin passcode.
+      const hash = settingUp ? await saveAdminPasscode(password) : await hashAdminPasscode(password);
+      if (!isAdminSession(hash)) {
+        failSignIn(['Wrong Shop ID or password.']);
+        return;
+      }
+      saveSession({ loginId, hash });
+      currentUser = ADMIN_USER;
+      view = 'stock';
+    } else {
+      refreshFromStorage(); // a login created a moment ago in another tab must work
+      const account = findAccount(state, loginId);
+      const hash = account ? await hashForAccount(password, account) : null;
+      refreshFromStorage(); // hashing takes a moment; use the newest data
+      const result = signInAccount(state, loginId, hash, new Date().toISOString());
+      if (!result.ok) {
+        failSignIn(result.errors);
+        return;
+      }
+      const saved = store.save(result.state);
+      if (!saved.ok) {
+        failSignIn([saved.error]);
+        return;
+      }
+      state = result.state;
+      saveSession({ loginId, hash });
+      currentUser = result.user;
     }
     form.reset();
     form.classList.remove('was-validated');
     hideErrors('signInErrors');
+    updateSignInMode();
+    closeForgotPanel();
     cart.clear();
     resetFilters();
     render();
     toast(`Signed in as ${currentUser.name}.`);
   } catch (err) {
-    showErrors('signInErrors', [`Could not sign in: ${err.message}`]);
+    failSignIn([`Could not sign in: ${err.message}`]);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+function failSignIn(errors) {
+  showErrors('signInErrors', errors);
+  $('loginPassword').value = '';
+  $('loginPasswordConfirm').value = '';
+  $('loginPassword').focus();
+}
+
+// The second password box appears only when the admin passcode is being
+// chosen for the first time (Shop ID "admin" and no passcode yet).
+function updateSignInMode() {
+  const settingUp = normalizeLoginId($('loginId').value) === ADMIN_LOGIN_ID && !hasAdminPasscode();
+  $('confirmWrap').classList.toggle('d-none', !settingUp);
+  $('loginPasswordConfirm').required = settingUp;
+  $('loginPassword').minLength = settingUp ? MIN_PASSWORD_LENGTH : 0;
+  $('loginPassword').autocomplete = settingUp ? 'new-password' : 'current-password';
+  $('loginPasswordFeedback').textContent = settingUp ? `Choose a password of at least ${MIN_PASSWORD_LENGTH} characters.` : 'Enter your password.';
+  $('signInSubmit').textContent = settingUp ? 'Save password and sign in' : 'Sign in';
+}
+
+// ---------------------------------------------------------------------------
+// Forgot password
+// ---------------------------------------------------------------------------
+
+// Shops ask head office for a new password. The admin (Shop ID "admin") can
+// start over: there is no server to prove who is asking, so this disables
+// every shop login. Stock, shops and products are kept.
+function renderForgotPanel() {
+  const panel = $('forgotPanel');
+  if (normalizeLoginId($('loginId').value) !== ADMIN_LOGIN_ID || !hasAdminPasscode()) {
+    panel.replaceChildren(h('p', { class: 'small mb-0' },
+      'Ask head office to reset your password. They will give you a new one, and you can then change it to one only you know.'));
+    return;
+  }
+  panel.replaceChildren(h('form', { id: 'forgotForm', class: 'forgot-panel', novalidate: true },
+    h('p', { class: 'small mb-2' },
+      'The admin passcode is stored only in this browser and cannot be recovered. You can choose a new one, but to keep the shops safe ',
+      h('strong', {}, 'every shop login will be disabled'),
+      ' and shops are signed out. Afterwards you can enable each login again or reset its password. Stock, shops and products are kept.'),
+    h('div', { id: 'forgotErrors', class: 'alert alert-danger d-none', role: 'alert' }),
+    h('label', { for: 'forgotConfirm', class: 'form-label small' }, 'Type ', h('strong', {}, 'RESET'), ' to confirm'),
+    h('div', { class: 'input-group' },
+      h('input', { id: 'forgotConfirm', type: 'text', class: 'form-control', required: true, pattern: 'RESET', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false' }),
+      h('button', { type: 'submit', class: 'btn btn-outline-danger' }, 'Disable logins and start over'))));
+  $('forgotConfirm').addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
+  $('forgotForm').addEventListener('submit', onForgotSubmit);
+}
+
+function closeForgotPanel() {
+  $('forgotPanel').classList.add('d-none');
+  $('forgotToggle').setAttribute('aria-expanded', 'false');
+}
+
+function onForgotSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  form.classList.add('was-validated');
+  if ($('forgotConfirm').value.trim() !== 'RESET') {
+    $('forgotConfirm').setCustomValidity('Type RESET to confirm.');
+    return;
+  }
+  refreshFromStorage();
+  const result = disableAllAccounts(state);
+  const saved = store.save(result.state);
+  if (!saved.ok) {
+    showErrors('forgotErrors', [saved.error]);
+    return;
+  }
+  state = result.state;
+  clearAdminPasscode();
+  closeForgotPanel();
+  updateSignInMode();
+  hideErrors('signInErrors');
+  showBanner(`Admin passcode cleared and ${result.disabled} shop login${result.disabled === 1 ? '' : 's'} disabled. Sign in as "admin" with a new password, then enable each login again or reset its password.`, 'info');
+  $('loginPassword').focus();
+}
+
+// ---------------------------------------------------------------------------
+// Change password (shops, head office and the admin)
+// ---------------------------------------------------------------------------
+
+function openPasswordModal() {
+  $('passwordContext').textContent = isAdmin()
+    ? 'Change the admin passcode. Other tabs signed in as admin will be signed out.'
+    : `Change the password for Shop ID ${session.loginId}. Other tabs signed in with the old password will be signed out.`;
+  openModal('passwordModal', 'passwordForm', 'passwordErrors', { id: 'changePasswordBtn' });
+}
+
+async function onPasswordSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const current = $('currentPassword').value;
+  const next = $('newPassword').value;
+  $('newPassword').setCustomValidity(next.length < MIN_PASSWORD_LENGTH ? `At least ${MIN_PASSWORD_LENGTH} characters.`
+    : next === current ? 'Choose a password different from the current one.' : '');
+  $('confirmPassword').setCustomValidity($('confirmPassword').value !== next ? 'Passwords do not match.' : '');
+  if (!formIsValid(form)) return;
+  const submit = $('passwordSubmit');
+  submit.disabled = true;
+  try {
+    if (isAdmin()) {
+      if (!isAdminSession(await hashAdminPasscode(current))) {
+        showErrors('passwordErrors', ['The current password is not right.']);
+        return;
+      }
+      saveSession({ loginId: ADMIN_LOGIN_ID, hash: await saveAdminPasscode(next) });
+    } else {
+      refreshFromStorage();
+      const account = findAccount(state, session.loginId);
+      const currentHash = account ? await hashForAccount(current, account) : null;
+      const record = await makePasswordRecord(next);
+      refreshFromStorage();
+      const result = changeOwnPassword(state, currentUser, currentHash, record);
+      if (!result.ok) {
+        showErrors('passwordErrors', result.errors);
+        return;
+      }
+      // Keep this tab signed in with the new password before other tabs hear of it.
+      saveSession({ loginId: session.loginId, hash: record.hash });
+      const saved = store.save(result.state);
+      if (!saved.ok) {
+        saveSession({ loginId: session.loginId, hash: account.hash });
+        showErrors('passwordErrors', [saved.error]);
+        return;
+      }
+      state = result.state;
+    }
+    hideErrors('passwordErrors');
+    closeModal('passwordModal');
+    render();
+    toast('Password changed.');
+  } catch (err) {
+    showErrors('passwordErrors', [`Could not change the password: ${err.message}`]);
   } finally {
     submit.disabled = false;
   }
 }
 
 function signOut(message) {
-  session = null;
+  saveSession(null);
   currentUser = null;
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch {
-    // nothing to remove
-  }
+  view = 'stock';
+  if (adminPanel) adminPanel.hideNewLogin(); // never leave a shown password on screen
   cart.clear();
   hideErrors('cartErrors');
   render();
@@ -626,7 +850,7 @@ function restoreUser() {
   } catch {
     session = null;
   }
-  currentUser = session ? userFromSession(state, session.loginId, session.hash) : null;
+  currentUser = resolveUser();
   if (!currentUser) session = null;
   resetFilters();
 }
@@ -637,6 +861,28 @@ function restoreUser() {
 
 function bindEvents() {
   $('signInForm').addEventListener('submit', onSignInSubmit);
+  $('loginId').addEventListener('input', updateSignInMode);
+  $('loginPassword').addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
+  $('loginPasswordConfirm').addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
+  $('forgotToggle').addEventListener('click', (e) => {
+    const open = $('forgotPanel').classList.toggle('d-none') === false;
+    e.currentTarget.setAttribute('aria-expanded', String(open));
+    if (open) {
+      renderForgotPanel();
+      const input = document.getElementById('forgotConfirm');
+      if (input) input.focus();
+    }
+  });
+  $('viewSwitch').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view]');
+    if (!btn || !isAdmin()) return;
+    view = btn.dataset.view;
+    render();
+  });
+  $('changePasswordBtn').addEventListener('click', openPasswordModal);
+  $('tempPasswordBtn').addEventListener('click', openPasswordModal);
+  $('passwordForm').addEventListener('submit', onPasswordSubmit);
+  for (const id of ['newPassword', 'confirmPassword']) $(id).addEventListener('input', (e) => e.currentTarget.setCustomValidity(''));
   $('togglePassword').addEventListener('click', (e) => {
     const input = $('loginPassword');
     const show = input.type === 'password';
@@ -727,7 +973,7 @@ function bindEvents() {
     renderCart();
   });
 
-  for (const id of ['receiveModal', 'transferModal', 'reorderModal', 'productModal']) bindModalFocus(id);
+  for (const id of ['receiveModal', 'transferModal', 'reorderModal', 'productModal', 'passwordModal']) bindModalFocus(id);
   $('receiveForm').addEventListener('submit', onReceiveSubmit);
   $('transferForm').addEventListener('submit', onTransferSubmit);
   $('reorderForm').addEventListener('submit', onReorderSubmit);
@@ -759,14 +1005,22 @@ async function start() {
   $('cartHeading').setAttribute('tabindex', '-1');
   restoreUser();
   bindEvents();
+  updateSignInMode();
+
+  // The admin passcode was changed or cleared in another tab: sign this admin tab out.
+  window.addEventListener('storage', (event) => {
+    if (event.key !== 'inventorysync:admin' && event.key !== null) return;
+    if (isAdmin() && !isAdminSession(session && session.hash)) signOut('You were signed out: the admin password was changed.');
+    else if (!currentUser) updateSignInMode();
+  });
 
   // R4: when another tab saves, take its data and redraw (no save here, so no loop).
   store.subscribe((fresh) => {
     state = fresh;
     const wasSignedIn = Boolean(currentUser);
-    currentUser = session ? userFromSession(state, session.loginId, session.hash) : null;
+    currentUser = resolveUser();
     if (wasSignedIn && !currentUser) {
-      signOut('You were signed out: head office disabled this login or changed its password.');
+      signOut('You were signed out: this login was disabled or its password was changed.');
       return;
     }
     render();

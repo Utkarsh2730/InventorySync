@@ -125,3 +125,40 @@ export function ProductDialog({ onConfirm, onClose }) {
     </Modal>
   );
 }
+
+// Change password: current, new, and new again. onConfirm may be async and
+// returns { ok, errors }.
+export function PasswordDialog({ context, onConfirm, onClose }) {
+  const [form, setForm] = useState({ current: '', next: '', confirm: '' });
+  const [errors, setErrors] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    const result = await onConfirm(form);
+    setBusy(false);
+    if (!result.ok) setErrors(result.errors);
+  };
+  return (
+    <Modal title="Change password" submitLabel={busy ? 'Saving…' : 'Save new password'} errors={errors} onClose={onClose} onSubmit={submit}>
+      <p className="small text-body-secondary">{context}</p>
+      <div className="mb-3">
+        <label htmlFor="currentPassword" className="form-label">Current password</label>
+        <input id="currentPassword" type="password" className="form-control" required maxLength={128}
+          autoComplete="current-password" spellCheck={false} {...field('current')} />
+        <div className="invalid-feedback">Enter your current password.</div>
+      </div>
+      <div className="mb-3">
+        <label htmlFor="newPassword" className="form-label">New password</label>
+        <input id="newPassword" type="password" className="form-control" required minLength={8} maxLength={128}
+          autoComplete="new-password" spellCheck={false} aria-describedby="newPasswordHelp" {...field('next')} />
+        <div className="invalid-feedback">At least 8 characters.</div>
+        <div id="newPasswordHelp" className="form-text">At least 8 characters. Do not reuse a password from another site.</div>
+      </div>
+      <label htmlFor="confirmPassword" className="form-label">Type the new password again</label>
+      <input id="confirmPassword" type="password" className="form-control" required maxLength={128}
+        autoComplete="new-password" spellCheck={false} {...field('confirm')} />
+    </Modal>
+  );
+}

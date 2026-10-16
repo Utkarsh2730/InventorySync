@@ -24,6 +24,7 @@ import {
   signInAccount,
   userFromSession,
   suggestLoginId,
+  changeOwnPassword,
   addStore,
   upgradeData,
   productLabel,
@@ -378,6 +379,43 @@ export function runTests() {
     const first = suggestLoginId(s, 'A');
     const taken = createAccount(s, user(s, 'admin'), { loginId: first, storeId: 'A', label: 'Shop A', password: PW, now: NOW }).state;
     return first === 'store-a' && suggestLoginId(taken, 'A') === 'store-a-2' && suggestLoginId(s, 'all') === 'head-office';
+  });
+  check('Change password: a shop changes its own password with the right current one', () => {
+    const made = withLogin().state;
+    const shop = signInAccount(made, 'shop-a', 'HASH-ONE', NOW).user;
+    const changed = changeOwnPassword(made, shop, 'HASH-ONE', PW2);
+    return changed.ok && changed.state.accounts[0].hash === 'HASH-TWO' && changed.state.accounts[0].tempPassword === false
+      && made.accounts[0].tempPassword === true
+      && userFromSession(changed.state, 'shop-a', 'HASH-ONE') === null && userFromSession(changed.state, 'shop-a', 'HASH-TWO') !== null;
+  });
+  check('Change password: a wrong current password, the admin or nobody is refused', () => {
+    const made = withLogin().state;
+    const shop = signInAccount(made, 'shop-a', 'HASH-ONE', NOW).user;
+    const wrong = changeOwnPassword(made, shop, 'NOT-IT', PW2);
+    const admin = changeOwnPassword(made, user(makeState(), 'admin'), 'HASH-ONE', PW2);
+    return !wrong.ok && wrong.errors[0] === 'The current password is not right.' && wrong.state === made
+      && !admin.ok && !changeOwnPassword(made, null, 'HASH-ONE', PW2).ok;
+  });
+  check('Reset password marks the password as temporary again', () => {
+    const s = makeState();
+    const made = withLogin().state;
+    const shop = signInAccount(made, 'shop-a', 'HASH-ONE', NOW).user;
+    const own = changeOwnPassword(made, shop, 'HASH-ONE', PW2).state;
+    const reset = resetAccountPassword(own, user(s, 'admin'), 'shop-a', PW).state;
+    return own.accounts[0].tempPassword === false && reset.accounts[0].tempPassword === true;
+  });
+  check('The Shop ID "admin" is reserved for the admin sign-in', () => {
+    const s = makeState();
+    const shopNamedAdmin = { ...s, stores: [...s.stores, { id: 'admin', name: 'Admin', city: '' }], stock: { ...s.stock, admin: s.stock.A } };
+    return !createAccount(s, user(s, 'admin'), { loginId: 'admin', storeId: 'A', label: 'Sneaky', password: PW, now: NOW }).ok
+      && suggestLoginId(shopNamedAdmin, 'admin') === 'admin-2';
+  });
+  check('The admin has head-office powers but never sells or stops items', () => {
+    const s = makeState();
+    const a = user(s, 'admin');
+    return can(a, 'transfer', 'A') && can(a, 'receive', 'B') && can(a, 'setReorder', 'A') && can(a, 'addProduct', null)
+      && can(a, 'manageAccounts', null) && !can(a, 'sell', 'A') && !can(a, 'setSelling', 'A')
+      && transfer(s, a, 'B', 'A', 'DAL', 2).ok && !checkout(s, a, 'A', [{ sku: 'DAL', qty: 1 }]).ok;
   });
   check('Forgot passcode: disabling every login signs every shop out but keeps stock and shops', () => {
     const s = makeState();

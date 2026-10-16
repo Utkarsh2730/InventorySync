@@ -8,9 +8,12 @@ export function StatusBadge({ status }) {
 
 // Shop sign-in with the Shop ID and password from head office (no admin
 // sign-in here).
-export function SignIn({ errors, onSignIn }) {
+export function SignIn({ errors, onSignIn, needsSetup }) {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const settingUp = needsSetup(loginId);
   const [showPassword, setShowPassword] = useState(false);
   const [validated, setValidated] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -19,9 +22,10 @@ export function SignIn({ errors, onSignIn }) {
     setValidated(true);
     if (!e.currentTarget.checkValidity()) return;
     setBusy(true);
-    const ok = await onSignIn(loginId, password);
+    const ok = await onSignIn(loginId, password, confirm);
     setBusy(false);
     setPassword('');
+    setConfirm('');
     if (ok) {
       setLoginId('');
       setValidated(false);
@@ -59,8 +63,22 @@ export function SignIn({ errors, onSignIn }) {
                   <div className="invalid-feedback">Enter your password.</div>
                 </div>
               </div>
-              <button type="submit" className="btn btn-primary w-100" disabled={busy}>Sign in</button>
+              {settingUp && (
+                // Only when a password is being chosen for the first time.
+                <div className="mb-3">
+                  <label htmlFor="loginPasswordConfirm" className="form-label">Type the password again</label>
+                  <input id="loginPasswordConfirm" type="password" className="form-control" required maxLength={128}
+                    autoComplete="new-password" spellCheck={false} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+                </div>
+              )}
+              <button type="submit" className="btn btn-primary w-100" disabled={busy}>{settingUp ? 'Save password and sign in' : 'Sign in'}</button>
             </form>
+            <div className="mt-3">
+              <button type="button" className="btn btn-link btn-sm p-0" aria-expanded={forgotOpen} onClick={() => setForgotOpen(!forgotOpen)}>Forgot password?</button>
+              {forgotOpen && (
+                <p className="small mt-2 mb-0">Ask head office to reset your password. They will give you a new one, and you can then change it to one only you know.</p>
+              )}
+            </div>
           </div>
         </div>
       </div>

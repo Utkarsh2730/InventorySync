@@ -23,15 +23,18 @@ import {
   normalizeLoginId,
   userFromSession,
   signInAccount,
+  changeOwnPassword,
+  ADMIN_LOGIN_ID,
   productLabel,
 } from '../../js/inventory.js';
 import { downloadRowsAsCsv } from '../../js/export.js';
 import { useInventory } from './useInventory.js';
-import { hashForAccount, isCryptoAvailable } from '../../js/crypto.js';
+import { hashForAccount, isCryptoAvailable, makePasswordRecord, MIN_PASSWORD_LENGTH } from '../../js/crypto.js';
+import { ADMIN_USER, hasAdminPasscode, hashAdminPasscode, saveAdminPasscode, isAdminSession } from '../../js/admin-auth.js';
 import { storeNameOf, userLabel } from './format.js';
 import { SignIn, SummaryCards, Filters, StockTable, AlertPanel } from './components/Dashboard.jsx';
 import { Cart, cartCount } from './components/Cart.jsx';
-import { ReceiveDialog, TransferDialog, ReorderDialog, ProductDialog } from './components/Dialogs.jsx';
+import { ReceiveDialog, TransferDialog, ReorderDialog, ProductDialog, PasswordDialog } from './components/Dialogs.jsx';
 
 // sessionStorage: { loginId, hash } of the shop login this tab signed in
 // with. The user is worked out from it on every render, so a disabled login
@@ -104,7 +107,24 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [banners, setBanners] = useState([]);
 
-  const user = state && session ? userFromSession(state, session.loginId, session.hash) : null;
+  // A shop or head-office login from the shared data, or the admin (Shop ID
+  // "admin", checked against the admin passcode). authTick re-checks the admin
+  // when the passcode changes in another tab.
+  const [authTick, setAuthTick] = useState(0);
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'inventorysync:admin' || e.key === null) setAuthTick((t) => t + 1);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+  const user = (() => {
+    if (!state || !session) return null;
+    if (session.loginId === ADMIN_LOGIN_ID) return authTick >= 0 && isAdminSession(session.hash) ? ADMIN_USER : null;
+    return userFromSession(state, session.loginId, session.hash);
+  })();
+  const isAdmin = Boolean(user && user.role === 'admin');
+  const account = user && !isAdmin ? findAccount(state, session.loginId) : null;
   const storeName = useCallback((id) => storeNameOf(state, id), [state]);
 
   useEffect(() => {
@@ -118,7 +138,7 @@ export default function App() {
     writeSession(null);
     setSession(null);
     setCart({});
-    setSignInErrors(['You were signed out: head office disabled this login or changed its password.']);
+    setSignInErrors(['You were signed out: this login was disabled or its password was changed.']);
   }, [sessionIsDead]);
 
   const toast = useCallback((message, type = 'success') => {
@@ -166,29 +186,77 @@ export default function App() {
   }
   if (!state) return <main className="container-fluid py-3"><p>Loading…</p></main>;
 
-  // Shop sign-in with the Shop ID and password from head office. The password
-  // is hashed with the account's salt (crypto.js); inventory.js compares.
-  const signIn = async (typedId, password) => {
+  // Sign-in for everyone: shops and head office with their Shop ID and
+  // password, the admin with the Shop ID "admin" and the admin passcode
+  // (the first time, the password typed twice becomes the passcode).
+  const signIn = async (typedId, password, confirm) => {
     if (!isCryptoAvailable()) {
       setSignInErrors(['This page cannot check passwords here. Open it over https:// or from localhost.']);
       return false;
     }
     const loginId = normalizeLoginId(typedId);
-    const account = findAccount(latest(), loginId);
-    const hash = account ? await hashForAccount(password, account) : null;
-    const result = write((s) => signInAccount(s, loginId, hash, new Date().toISOString()));
-    if (!result.ok) {
-      setSignInErrors(result.errors);
-      return false;
+    let next;
+    let name;
+    if (loginId === ADMIN_LOGIN_ID) {
+      const settingUp = !hasAdminPasscode();
+      if (settingUp && password.length < MIN_PASSWORD_LENGTH) {
+        setSignInErrors([`Choose a password of at least ${MIN_PASSWORD_LENGTH} characters.`]);
+        return false;
+      }
+      if (settingUp && confirm !== password) {
+        setSignInErrors(['The two passwords do not match.']);
+        return false;
+      }
+      const hash = settingUp ? await saveAdminPasscode(password) : await hashAdminPasscode(password);
+      if (!isAdminSession(hash)) {
+        setSignInErrors(['Wrong Shop ID or password.']);
+        return false;
+      }
+      next = { loginId, hash };
+      name = ADMIN_USER.name;
+    } else {
+      const found = findAccount(latest(), loginId);
+      const hash = found ? await hashForAccount(password, found) : null;
+      const result = write((s) => signInAccount(s, loginId, hash, new Date().toISOString()));
+      if (!result.ok) {
+        setSignInErrors(result.errors);
+        return false;
+      }
+      next = { loginId, hash };
+      name = result.user.name;
     }
-    const next = { loginId, hash };
     writeSession(next);
     setSession(next);
     setSignInErrors([]);
     setCart({});
     setCartErrors([]);
-    toast(`Signed in as ${result.user.name}.`);
+    toast(`Signed in as ${name}.`);
     return true;
+  };
+
+  // Change password: shops and head office through the rules, the admin
+  // through its passcode. This tab stays signed in with the new password.
+  const changePassword = async ({ current, next, confirm }) => {
+    if (next.length < MIN_PASSWORD_LENGTH) return { ok: false, errors: [`The new password needs at least ${MIN_PASSWORD_LENGTH} characters.`] };
+    if (next === current) return { ok: false, errors: ['Choose a password different from the current one.'] };
+    if (next !== confirm) return { ok: false, errors: ['The two new passwords do not match.'] };
+    if (isAdmin) {
+      if (!isAdminSession(await hashAdminPasscode(current))) return { ok: false, errors: ['The current password is not right.'] };
+      const updated = { loginId: ADMIN_LOGIN_ID, hash: await saveAdminPasscode(next) };
+      writeSession(updated);
+      setSession(updated);
+    } else {
+      const found = findAccount(latest(), session.loginId);
+      const currentHash = found ? await hashForAccount(current, found) : null;
+      const record = await makePasswordRecord(next);
+      const result = write((s) => changeOwnPassword(s, user, currentHash, record));
+      if (!result.ok) return result;
+      const updated = { loginId: session.loginId, hash: record.hash };
+      writeSession(updated);
+      setSession(updated);
+    }
+    toast('Password changed.');
+    return { ok: true, errors: [] };
   };
 
   const signOut = () => {
@@ -307,8 +375,13 @@ export default function App() {
             <div className="ms-lg-auto d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center py-2 py-lg-0">
               {user && (
                 <div className="d-flex flex-wrap gap-2 align-items-center">
-                  <span className="small text-body-secondary">Signed in:</span>
-                  <span className="small fw-semibold">{userLabel(state, user)}</span>
+                  {isAdmin && (
+                    // The Shops & logins view lives on the main page; only the admin sees this link.
+                    <a className="btn btn-sm btn-outline-primary" href="../">Shops &amp; logins</a>
+                  )}
+                  <span className="small"><span className="text-body-secondary">Signed in:</span>{' '}
+                    <span className="fw-semibold">{isAdmin ? 'Admin · head office' : userLabel(state, user)}</span></span>
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setDialog({ type: 'password' })}>Change password</button>
                   <button type="button" className="btn btn-sm btn-outline-secondary" onClick={signOut}>Sign out</button>
                 </div>
               )}
@@ -333,7 +406,17 @@ export default function App() {
       )}
 
       <main id="main" className="container-fluid py-3">
-        {!user && <SignIn errors={signInErrors} onSignIn={signIn} />}
+        {!user && (
+          <SignIn errors={signInErrors} onSignIn={signIn}
+            needsSetup={(id) => normalizeLoginId(id) === ADMIN_LOGIN_ID && !hasAdminPasscode()} />
+        )}
+
+        {account && account.tempPassword && (
+          <div className="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-2 py-2 no-print" role="status">
+            <span>You are using a password from head office. Change it to one only you know.</span>
+            <button type="button" className="btn btn-sm btn-warning" onClick={() => setDialog({ type: 'password' })}>Change password</button>
+          </div>
+        )}
 
         {user && (
           <>
@@ -426,6 +509,14 @@ export default function App() {
         <ReorderDialog state={state} storeId={dialog.storeId} sku={dialog.sku} onClose={closeDialog}
           onConfirm={({ level }) => finish(runWrite((s) => setReorderLevel(s, user, dialog.storeId, dialog.sku, level),
             `Reorder level for ${productLabel(findProduct(state, dialog.sku))} at ${storeName(dialog.storeId)} is now ${level}.`))} />
+      )}
+      {user && dialog && dialog.type === 'password' && (
+        <PasswordDialog
+          context={isAdmin
+            ? 'Change the admin passcode. Other tabs signed in as admin will be signed out.'
+            : `Change the password for Shop ID ${session.loginId}. Other tabs signed in with the old password will be signed out.`}
+          onClose={closeDialog}
+          onConfirm={async (values) => finish(await changePassword(values))} />
       )}
       {user && dialog && dialog.type === 'product' && (
         <ProductDialog onClose={closeDialog}

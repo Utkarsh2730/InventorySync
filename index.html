@@ -30,9 +30,16 @@
       <div class="collapse navbar-collapse" id="navMenu">
         <div class="ms-lg-auto d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center py-2 py-lg-0">
           <div id="userControls" class="d-flex flex-wrap gap-2 align-items-center d-none">
-            <span class="small text-body-secondary">Signed in:</span>
-            <span id="whoAmI" class="small fw-semibold"></span>
-            <button id="signOutBtn" type="button" class="btn btn-sm btn-outline-secondary">Sign out</button>
+            <!-- Only shown to the head-office owner: switch between the two views. -->
+            <div id="viewSwitch" class="btn-group btn-group-sm d-none" role="group" aria-label="View">
+              <button type="button" class="btn btn-outline-primary" data-view="stock" aria-pressed="true">Stock</button>
+              <button type="button" class="btn btn-outline-primary" data-view="manage" aria-pressed="false">Shops &amp; logins</button>
+            </div>
+            <span class="small who-am-i"><span class="text-body-secondary">Signed in:</span> <span id="whoAmI" class="fw-semibold"></span></span>
+            <div class="d-flex gap-2 user-buttons">
+              <button id="changePasswordBtn" type="button" class="btn btn-sm btn-outline-secondary">Change password</button>
+              <button id="signOutBtn" type="button" class="btn btn-sm btn-outline-secondary">Sign out</button>
+            </div>
           </div>
           <button id="themeToggle" type="button" class="btn btn-sm btn-outline-secondary">Dark mode</button>
         </div>
@@ -69,11 +76,21 @@
                     <input id="loginPassword" type="password" class="form-control" required maxlength="128"
                            autocomplete="current-password" spellcheck="false">
                     <button id="togglePassword" type="button" class="btn btn-outline-secondary" aria-controls="loginPassword" aria-pressed="false">Show</button>
-                    <div class="invalid-feedback">Enter your password.</div>
+                    <div id="loginPasswordFeedback" class="invalid-feedback">Enter your password.</div>
                   </div>
+                </div>
+                <!-- Shown only when a password is being chosen for the first time. -->
+                <div id="confirmWrap" class="mb-3 d-none">
+                  <label for="loginPasswordConfirm" class="form-label">Type the password again</label>
+                  <input id="loginPasswordConfirm" type="password" class="form-control" maxlength="128" autocomplete="new-password" spellcheck="false">
+                  <div class="invalid-feedback">Type the same password again.</div>
                 </div>
                 <button id="signInSubmit" type="submit" class="btn btn-primary w-100">Sign in</button>
               </form>
+              <div class="mt-3">
+                <button id="forgotToggle" type="button" class="btn btn-link btn-sm p-0" aria-expanded="false" aria-controls="forgotPanel">Forgot password?</button>
+                <div id="forgotPanel" class="mt-2 d-none"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -81,6 +98,11 @@
     </section>
 
     <div id="appScreen" class="d-none">
+      <!-- Reminder for a password made by head office, until the shop changes it. -->
+      <div id="tempPasswordNotice" class="alert alert-warning d-none d-flex flex-wrap align-items-center justify-content-between gap-2 py-2 no-print" role="status">
+        <span>You are using a password from head office. Change it to one only you know.</span>
+        <button id="tempPasswordBtn" type="button" class="btn btn-sm btn-warning">Change password</button>
+      </div>
       <!-- Only shown when printing (Print → Save as PDF). -->
       <div class="d-none d-print-block mb-3">
         <h1 class="h4 mb-1">InventorySync stock report</h1>
@@ -226,7 +248,43 @@
         </div>
       </div>
     </div>
+    <!-- Shops & logins: built by script only after the head-office owner signs in. -->
+    <div id="manageScreen" class="d-none"></div>
   </main>
+
+  <!-- Change password modal (every signed-in login) -->
+  <div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <form id="passwordForm" class="modal-content" novalidate>
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="passwordTitle">Change password</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p id="passwordContext" class="small text-body-secondary mb-3"></p>
+          <div id="passwordErrors" class="alert alert-danger d-none" role="alert"></div>
+          <div class="mb-3">
+            <label for="currentPassword" class="form-label">Current password</label>
+            <input id="currentPassword" type="password" class="form-control" required maxlength="128" autocomplete="current-password" spellcheck="false">
+            <div class="invalid-feedback">Enter your current password.</div>
+          </div>
+          <div class="mb-3">
+            <label for="newPassword" class="form-label">New password</label>
+            <input id="newPassword" type="password" class="form-control" required minlength="8" maxlength="128" autocomplete="new-password" spellcheck="false" aria-describedby="newPasswordHelp">
+            <div id="newPasswordFeedback" class="invalid-feedback">At least 8 characters, different from the current password.</div>
+            <div id="newPasswordHelp" class="form-text">At least 8 characters. Do not reuse a password from another site.</div>
+          </div>
+          <label for="confirmPassword" class="form-label">Type the new password again</label>
+          <input id="confirmPassword" type="password" class="form-control" required maxlength="128" autocomplete="new-password" spellcheck="false">
+          <div class="invalid-feedback">Type the same new password again.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button id="passwordSubmit" type="submit" class="btn btn-primary">Save new password</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- Receive modal -->
   <div class="modal fade" id="receiveModal" tabindex="-1" aria-labelledby="receiveTitle" aria-hidden="true">

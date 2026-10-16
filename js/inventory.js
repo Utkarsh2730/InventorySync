@@ -27,6 +27,7 @@ export const ACTION_LABELS = {
   addProduct: 'add products',
   setSelling: 'change which items this shop sells',
   manageAccounts: 'manage shop logins',
+  changeOwnPassword: 'change this login\'s password',
   addStore: 'add shops',
 };
 
@@ -50,10 +51,13 @@ export function statusOf(qty, reorderLevel) {
 //                            only); add products to the chain catalogue
 //   Inventory Buyer (head office code): receive (any store), transfer,
 //                            setReorder, addProduct; never sell
-//   Admin:                   manage shop logins, add shops; no stock changes
+//   Admin (head-office owner): everything the Inventory Buyer can do, plus
+//                            manage shop logins and add shops; never sells
+//   Shops and head office can change their own password.
 // Anything else, or a missing user, is refused.
 export function can(user, action, storeId) {
   if (!user) return false;
+  if (action === 'changeOwnPassword') return user.role === 'manager' || user.role === 'buyer';
   if (user.role === 'manager') {
     if (action === 'addProduct') return true;
     const ownStore = storeId === user.storeId;
@@ -63,7 +67,7 @@ export function can(user, action, storeId) {
     return ['receive', 'transfer', 'setReorder', 'addProduct'].includes(action);
   }
   if (user.role === 'admin') {
-    return ['manageAccounts', 'addStore'].includes(action);
+    return ['receive', 'transfer', 'setReorder', 'addProduct', 'manageAccounts', 'addStore'].includes(action);
   }
   return false;
 }
@@ -335,6 +339,10 @@ export function setSelling(state, user, storeId, sku, selling) {
 
 export const LOGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]{2,31}$/;
 
+// The admin signs in on the same page with this Shop ID and the admin
+// passcode, so no shop login may use it.
+export const ADMIN_LOGIN_ID = 'admin';
+
 export function normalizeLoginId(loginId) {
   return String(loginId || '').trim().toLowerCase();
 }
@@ -355,7 +363,7 @@ export function suggestLoginId(state, storeId) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 28) || 'shop';
   const padded = base.length >= 3 ? base : `${base}-shop`;
   let id = padded;
-  for (let n = 2; findAccount(state, id); n += 1) id = `${padded}-${n}`;
+  for (let n = 2; findAccount(state, id) || id === ADMIN_LOGIN_ID; n += 1) id = `${padded}-${n}`;
   return id;
 }
 
@@ -375,6 +383,7 @@ export function createAccount(state, actor, input) {
 
   const errors = [];
   if (!LOGIN_ID_PATTERN.test(loginId)) errors.push('Shop ID must be 3–32 lower-case letters, digits or dashes.');
+  else if (loginId === ADMIN_LOGIN_ID) errors.push(`Shop ID "${ADMIN_LOGIN_ID}" is reserved.`);
   else if (findAccount(state, loginId)) errors.push(`Shop ID "${loginId}" is already taken.`);
   if (storeId !== 'all' && !findStore(state, storeId)) errors.push('Choose the shop this login is for.');
   if (label.length < 2 || label.length > 60) errors.push('Give the login a name of 2–60 characters, for example "Indiranagar counter".');
@@ -394,6 +403,7 @@ export function createAccount(state, actor, input) {
     createdAt: (input && input.now) || new Date().toISOString(),
     lastUsedAt: null,
     disabled: false,
+    tempPassword: true, // made by head office: the shop is asked to choose its own
   });
   return { ok: true, errors: [], state: next };
 }
@@ -408,7 +418,26 @@ export function resetAccountPassword(state, actor, loginId, password) {
 
   const next = clone(state);
   Object.assign(next.accounts.find((a) => a.loginId === account.loginId), {
-    salt: password.salt, hash: password.hash, iterations: password.iterations,
+    salt: password.salt, hash: password.hash, iterations: password.iterations, tempPassword: true,
+  });
+  return { ok: true, errors: [], state: next };
+}
+
+// A shop (or head office) changes its own password. currentHash is the typed
+// current password hashed with the account's salt; newPassword is a fresh
+// { salt, hash, iterations }. Other tabs signed in with the old password are
+// signed out; the caller keeps its own tab signed in with the new hash.
+export function changeOwnPassword(state, user, currentHash, newPassword) {
+  if (!can(user, 'changeOwnPassword', null)) return refuse(state, [refusalMessage(state, user, 'changeOwnPassword', null)]);
+  const loginId = String(user.id || '').replace(/^login:/, '');
+  const account = findAccount(state, loginId);
+  if (!account || account.disabled || `login:${account.loginId}` !== user.id) return refuse(state, ['This login cannot be changed. Sign in again.']);
+  if (!currentHash || currentHash !== account.hash) return refuse(state, ['The current password is not right.']);
+  if (!isPasswordRecord(newPassword)) return refuse(state, ['The new password could not be prepared. Try again.']);
+
+  const next = clone(state);
+  Object.assign(next.accounts.find((a) => a.loginId === account.loginId), {
+    salt: newPassword.salt, hash: newPassword.hash, iterations: newPassword.iterations, tempPassword: false,
   });
   return { ok: true, errors: [], state: next };
 }
@@ -566,7 +595,7 @@ export function alertsOf(state, storeId = 'all') {
 
 // The store a user should see first: a manager's own store, otherwise all.
 export function defaultStoreFor(user) {
-  return user && user.role === 'manager' && user.storeId ? user.storeId : 'all';
+  return user && user.role === 'manager' && user.storeId ? user.storeId : 'all'; // buyer and admin: all
 }
 
 // ---------------------------------------------------------------------------
